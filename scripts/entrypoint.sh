@@ -41,5 +41,5 @@ else
 fi
 
 # ── Start OpenClaw Gateway ─────────────────────────────────────────────────
-log "Starting OpenClaw Gateway on 0.0.0.0:18789..."
+log "Starting OpenClaw Gateway..."
 exec openclaw gateway run

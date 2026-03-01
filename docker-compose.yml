@@ -1,17 +1,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # OpenClaw Autonomous Coding Agent — Docker Compose
 #
-# Services:
-#   openclaw     — AI coding agent (OpenClaw + Ollama via qwen3-coder)
-#   caddy        — Internal reverse proxy: basicauth + rate limiting (HTTP only)
-#   cloudflared  — Cloudflare Tunnel (trycloudflare.com — no account needed)
-#
-# Access: check tunnel URL with:  make url
+# Single service: openclaw-agent
+# Access: Telegram bot (dmPolicy=pairing — send /start to pair)
+# LLM: Anthropic Claude Sonnet 4.6
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
-  # ── OpenClaw Agent ──────────────────────────────────────────────────────
+  # ── OpenClaw Agent ──────────────────────────────────────────────────────────
   openclaw:
     build:
       context: .
@@ -32,13 +29,7 @@ services:
     volumes:
       - openclaw-state:/home/openclaw/.openclaw
 
-    networks:
-      - openclaw-net
-
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    # ── Security hardening ───────────────────────────────────────────────
+    # ── Security hardening ─────────────────────────────────────────────────
     user: "10001:10001"
     security_opt:
       - no-new-privileges:true
@@ -67,94 +58,7 @@ services:
       retries:      3
       start_period: 90s
 
-  # ── Caddy (internal only — HTTP on port 8080) ───────────────────────────
-  # Provides: basicauth, rate limiting, request size cap, security headers
-  # TLS is handled by Cloudflare at the edge — not needed here
-  caddy:
-    build:
-      context:    caddy/
-      dockerfile: Dockerfile
-    image: openclaw-caddy:local
-    container_name: openclaw-caddy
-    restart: unless-stopped
-
-    env_file: .env
-
-    # No ports published to host — only cloudflared reaches caddy internally
-    expose:
-      - "8080"
-
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-
-    networks:
-      - openclaw-net
-
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    # No NET_BIND_SERVICE needed — port 8080 > 1024
-
-    deploy:
-      resources:
-        limits:
-          cpus:   "0.25"
-          memory: 128M
-
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-    depends_on:
-      openclaw:
-        condition: service_healthy
-
-  # ── Cloudflare Tunnel (trycloudflare.com — no account required) ─────────
-  # Provides public HTTPS access. Random URL printed in logs on each start.
-  # Run: make url    to extract the current URL.
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: openclaw-cloudflared
-    restart: unless-stopped
-    command: tunnel --no-autoupdate --url http://caddy:8080
-
-    networks:
-      - openclaw-net
-
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-
-    deploy:
-      resources:
-        limits:
-          cpus:   "0.25"
-          memory: 64M
-
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "3"
-
-    depends_on:
-      - caddy
-
-# ── Networks ────────────────────────────────────────────────────────────────
-networks:
-  openclaw-net:
-    driver: bridge
-    driver_opts:
-      com.docker.network.bridge.name: br-openclaw
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16
-
-# ── Volumes ─────────────────────────────────────────────────────────────────
+# ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
   openclaw-state:
     driver: local

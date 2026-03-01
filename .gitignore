@@ -34,10 +34,6 @@ logs/
 node_modules/
 npm-debug.log*
 
-# ── Downloaded binaries (not committed — re-downloaded by scripts) ────────────
-scripts/cloudflared.exe
-scripts/cloudflared
-
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp

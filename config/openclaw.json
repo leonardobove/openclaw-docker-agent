@@ -10,8 +10,29 @@
 
   "models": {
     "providers": {
-      "gemini": {
-        "apiKey": "${GEMINI_API_KEY}"
+      "anthropic": {
+        "apiKey": "${ANTHROPIC_API_KEY}",
+        "baseUrl": "https://api.anthropic.com",
+        "api": "anthropic-messages",
+        "models": [
+          {
+            "id": "claude-sonnet-4-6",
+            "name": "Claude Sonnet 4.6",
+            "api": "anthropic-messages",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "contextWindow": 200000,
+            "maxTokens": 16000
+          },
+          {
+            "id": "claude-haiku-4-5-20251001",
+            "name": "Claude Haiku 4.5",
+            "api": "anthropic-messages",
+            "input": ["text", "image"],
+            "contextWindow": 200000,
+            "maxTokens": 4096
+          }
+        ]
       }
     }
   },
@@ -19,18 +40,21 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary":   "gemini/gemini-2.0-flash",
-        "fallbacks": [
-          "gemini/gemini-1.5-flash"
-        ]
+        "primary":   "anthropic/claude-sonnet-4-6",
+        "fallbacks": ["anthropic/claude-haiku-4-5-20251001"]
       },
       "workspace": "${OPENCLAW_HOME}/workspace",
       "sandbox":   {}
     }
   },
 
-  "env": {
-    "shellEnv": {},
-    "vars": {}
+  "channels": {
+    "telegram": {
+      "botToken":      "${TELEGRAM_BOT_TOKEN}",
+      "dmPolicy":      "pairing",
+      "streaming":     "partial",
+      "reactionLevel": "ack",
+      "ackReaction":   "👀"
+    }
   }
 }

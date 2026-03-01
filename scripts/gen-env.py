@@ -7,22 +7,19 @@ Run from the repo root:
 
 What it does:
   - Generates a random 64-hex-char OPENCLAW_GATEWAY_TOKEN
-  - Hashes your Caddy web UI password via Docker (bcrypt)
+  - Prompts for TELEGRAM_BOT_TOKEN (from @BotFather)
+  - Prompts for ANTHROPIC_API_KEY (from console.anthropic.com)
   - Writes a clean .env with no trailing whitespace or encoding issues
-
-Requirements: Docker must be running (used only to hash the password).
 """
 
 import subprocess
 import sys
 import os
-import getpass
 
 ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 
 DEFAULTS = {
     "OPENCLAW_VERSION": "latest",
-    "CADDY_AUTH_USER": "agent",
 }
 
 
@@ -48,36 +45,28 @@ def main():
     token = run(["openssl", "rand", "-hex", "32"], "openssl rand")
     print(f"  Token: {token[:8]}...{token[-4:]}")
 
-    # Gemini API key
+    # Telegram bot token
     print()
-    print("Get a free Gemini API key at: https://aistudio.google.com/apikey")
-    gemini_key = input("Paste your GEMINI_API_KEY: ").strip()
-    if not gemini_key:
-        print("ERROR: GEMINI_API_KEY cannot be empty.")
+    print("Get a bot token from @BotFather on Telegram (/newbot)")
+    telegram_token = input("Paste your TELEGRAM_BOT_TOKEN: ").strip()
+    if not telegram_token:
+        print("ERROR: TELEGRAM_BOT_TOKEN cannot be empty.")
         sys.exit(1)
 
-    # Caddy password
+    # Anthropic API key
     print()
-    print(f"Caddy web UI user: {DEFAULTS['CADDY_AUTH_USER']}")
-    password = getpass.getpass("Enter Caddy web UI password (input hidden): ").strip()
-    if not password:
-        print("ERROR: password cannot be empty.")
+    print("Get an API key from https://console.anthropic.com")
+    anthropic_key = input("Paste your ANTHROPIC_API_KEY: ").strip()
+    if not anthropic_key:
+        print("ERROR: ANTHROPIC_API_KEY cannot be empty.")
         sys.exit(1)
-
-    print("Hashing password via Docker (caddy:2-alpine)...")
-    caddy_hash = run(
-        ["docker", "run", "--rm", "caddy:2-alpine", "caddy", "hash-password", "--plaintext", password],
-        "caddy hash-password",
-    )
-    print("  Hash generated.")
 
     # Write .env
     lines = [
         f"OPENCLAW_VERSION={DEFAULTS['OPENCLAW_VERSION']}",
         f"OPENCLAW_GATEWAY_TOKEN={token}",
-        f"GEMINI_API_KEY={gemini_key}",
-        f"CADDY_AUTH_USER={DEFAULTS['CADDY_AUTH_USER']}",
-        f"CADDY_AUTH_HASH={caddy_hash}",
+        f"TELEGRAM_BOT_TOKEN={telegram_token}",
+        f"ANTHROPIC_API_KEY={anthropic_key}",
     ]
 
     with open(ENV_FILE, "w", newline="\n") as f:
@@ -88,7 +77,8 @@ def main():
     print()
     print("Next steps:")
     print("  docker compose down -v   # remove old state volume")
-    print("  make up                  # rebuild and start")
+    print("  make up                  # build and start")
+    print("  make logs                # watch startup, then pair Telegram")
 
 
 if __name__ == "__main__":
