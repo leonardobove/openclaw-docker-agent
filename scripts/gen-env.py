@@ -61,6 +61,11 @@ def main():
         print("ERROR: ANTHROPIC_API_KEY cannot be empty.")
         sys.exit(1)
 
+    # Gemini API key (optional)
+    print()
+    print("Get a free API key from https://aistudio.google.com/apikey")
+    gemini_key = input("Paste your GEMINI_API_KEY (or press Enter to skip): ").strip()
+
     # Write .env
     lines = [
         f"OPENCLAW_VERSION={DEFAULTS['OPENCLAW_VERSION']}",
@@ -68,6 +73,8 @@ def main():
         f"TELEGRAM_BOT_TOKEN={telegram_token}",
         f"ANTHROPIC_API_KEY={anthropic_key}",
     ]
+    if gemini_key:
+        lines.append(f"GEMINI_API_KEY={gemini_key}")
 
     with open(ENV_FILE, "w", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
