@@ -119,6 +119,94 @@ Login with the username/password you set in `.env`.
 
 ---
 
+## Home server setup (behind a home router)
+
+If your Linux machine is on a home LAN behind a NAT router, use the dedicated
+home server setup instead of the generic VPS setup. It handles everything the
+cloud VPS setup does, plus the home-specific requirements.
+
+```
+Your Router (NAT)
+    │
+    └── Linux Home Server  ←── this machine
+            │
+            ├── Docker (OpenClaw + Caddy + cloudflared)
+            ├── Static LAN IP  (no address changes on reboot)
+            ├── Hardened SSH   (key-based only + fail2ban)
+            ├── ufw firewall   (LAN SSH only, all else blocked)
+            └── Tailscale      (remote SSH from anywhere, no port forwarding)
+```
+
+**No router port forwarding is required.** Everything uses outbound connections:
+- cloudflared makes outbound connections to Cloudflare → phone access works
+- Tailscale makes outbound connections → remote SSH works
+- SSH reverse tunnel from your Windows PC is outbound → Ollama access works
+
+### Home server quick start
+
+```bash
+# Clone on your Linux home server
+git clone https://github.com/YOUR_USERNAME/openclaw-docker-agent.git
+cd openclaw-docker-agent
+
+# Run the master setup script — walks through each step with confirmation
+bash scripts/homeserver/setup.sh
+```
+
+The master script runs these in order:
+
+| Script | What it does |
+|---|---|
+| `homeserver/01-static-ip.sh` | Reads your current LAN IP, writes a static netplan config |
+| `homeserver/02-ssh-hardening.sh` | Disables password auth, enables key-only, installs fail2ban |
+| `homeserver/03-firewall.sh` | Sets ufw rules for home server (LAN SSH only, Ollama blocked) |
+| `homeserver/04-tailscale.sh` | Installs Tailscale for remote SSH without port forwarding |
+| `setup-vps.sh` | Installs Docker Engine, sets sshd GatewayPorts |
+
+Each step asks for confirmation before making changes and is safe to re-run.
+
+### After home server setup
+
+```bash
+# Apply docker group (no full logout needed)
+exec newgrp docker
+
+# Configure and start the stack
+cp .env.example .env
+make gen-auth PASSWORD='your_password'   # paste into CADDY_AUTH_HASH in .env
+nano .env                                # also fill OPENCLAW_GATEWAY_TOKEN
+make up
+make url                                 # get your phone URL
+```
+
+### Ollama tunnel — home vs. away
+
+| Location | Tunnel command |
+|---|---|
+| Home LAN (Windows) | `scripts\tunnel.bat user@192.168.x.x` (local IP) |
+| Away from home (Windows) | `scripts\tunnel.bat user@100.x.x.x` (Tailscale IP) |
+| Home LAN (macOS/Linux) | `./scripts/tunnel.sh user@192.168.x.x` |
+| Away from home (macOS/Linux) | `./scripts/tunnel.sh user@100.x.x.x` |
+
+Find your Tailscale IP on the server: `tailscale ip -4`
+
+### Add your SSH key before running setup
+
+The SSH hardening script disables password authentication. Make sure your
+public key is on the server first:
+
+```bash
+# From your local machine (Windows PowerShell, macOS Terminal, or Linux):
+ssh-copy-id user@192.168.x.x
+
+# Or manually on the server:
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo 'ssh-ed25519 AAAA...' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+---
+
 ## Recommended models
 
 Pull on your local machine before starting the tunnel:

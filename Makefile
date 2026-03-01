@@ -1,5 +1,6 @@
 .PHONY: help up down restart logs logs-caddy logs-tunnel shell url \
-        tunnel gen-auth status build reset upgrade clean deploy
+        tunnel gen-auth status build reset upgrade clean deploy \
+        setup-homeserver setup-vps
 
 COMPOSE      := docker compose
 AGENT        := openclaw-agent
@@ -30,10 +31,14 @@ help:
 	@printf '  \033[36m%-20s\033[0m %s\n' "reset"         "Wipe agent state volume and restart clean"
 	@printf '  \033[36m%-20s\033[0m %s\n' "upgrade"       "Upgrade OpenClaw to latest and rebuild"
 	@printf '  \033[36m%-20s\033[0m %s\n' "clean"         "Remove all containers, images, and volumes"
-	@printf '  \033[36m%-20s\033[0m %s\n' "tunnel"        "Start Ollama SSH tunnel to VPS (Linux/macOS only)"
-	@printf '  \033[36m%-20s\033[0m %s\n' "deploy"        "Sync project files to VPS via scp"
+	@printf '  \033[36m%-20s\033[0m %s\n' "tunnel"           "Start Ollama SSH tunnel to server (Linux/macOS)"
+	@printf '  \033[36m%-20s\033[0m %s\n' "deploy"           "Sync project files to server via scp"
 	@printf '\n'
-	@printf '  Windows tunnel:  scripts\\tunnel.bat ubuntu@VPS_IP\n'
+	@printf '\033[1m  Server setup (run on Linux server):\033[0m\n'
+	@printf '  \033[36m%-20s\033[0m %s\n' "setup-homeserver" "Full home server setup (static IP, SSH, firewall, Tailscale, Docker)"
+	@printf '  \033[36m%-20s\033[0m %s\n' "setup-vps"        "Cloud VPS setup (Docker + sshd only)"
+	@printf '\n'
+	@printf '  Windows tunnel:  scripts\\tunnel.bat user@SERVER_IP\n'
 	@printf '  Deploy:          make deploy VPS_USER=ubuntu VPS_HOST=1.2.3.4\n\n'
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -140,6 +145,13 @@ endif
 	@echo "Files copied. Now run on the VPS:"
 	@echo "  ssh $(VPS_USER)@$(VPS_HOST)"
 	@echo "  bash $(VPS_DIR)/scripts/setup-vps.sh"
+
+# ── Server setup targets (run directly on the Linux machine) ──────────────
+setup-homeserver:
+	bash scripts/homeserver/setup.sh
+
+setup-vps:
+	bash scripts/setup-vps.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
 .env:
