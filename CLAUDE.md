@@ -196,6 +196,35 @@ Or ask the bot directly: *"switch to Gemini 2.0 Flash"*
 
 ---
 
+## Docker Self-Rebuild Capability
+
+The container has the Docker socket mounted and the Docker CLI installed. OpenClaw can
+manage Docker directly — including rebuilding and restarting itself.
+
+**Key env var:** `REPO_HOST_PATH=/home/leonardo/openclaw-docker-agent`
+This is the HOST path to the repo. Docker commands must use this path (not `/home/openclaw/repo`)
+because the Docker daemon resolves paths from the host's perspective, not the container's.
+
+**Rebuild command (from inside the container):**
+```bash
+docker compose -f "$REPO_HOST_PATH/docker-compose.yml" up -d --build
+```
+
+⚠️ Running this kills the current container (and the active agent session). Always warn the
+user before triggering a rebuild.
+
+**To install a new system package:**
+1. Edit `/home/openclaw/repo/Dockerfile` — add to the apt-get install list
+2. Commit: `git -C /home/openclaw/repo commit -am "Add <pkg> to Dockerfile"`
+3. Warn the user, then rebuild
+
+**Docker group:** container user (UID 10001) is in group `docker-host` (GID 999 = host docker group).
+If deploying to a new machine where the docker group has a different GID, update the GID in
+the Dockerfile (`groupadd -g 999 docker-host`) and `docker-compose.yml` (`group_add: ["999"]`).
+Check with: `getent group docker | cut -d: -f3`
+
+---
+
 ## Making Changes to This Repo
 
 The bot can modify this repository directly. The repo is at `/home/leonardo/openclaw-docker-agent`.

@@ -29,16 +29,18 @@ if [[ ! -f "${OPENCLAW_HOME}/openclaw.json" ]]; then
     chmod 600 "${OPENCLAW_HOME}/openclaw.json"
     chmod 700 "${OPENCLAW_HOME}/credentials"
 
-    # Seed workspace instruction files
-    [[ -f /etc/openclaw/workspace/AGENTS.md ]] \
-        && cp /etc/openclaw/workspace/AGENTS.md "${OPENCLAW_HOME}/workspace/AGENTS.md"
-    [[ -f /etc/openclaw/workspace/SOUL.md ]] \
-        && cp /etc/openclaw/workspace/SOUL.md "${OPENCLAW_HOME}/workspace/SOUL.md"
-
     log "Initialization complete."
 else
     log "Existing state found — skipping initialization."
 fi
+
+# ── Always sync workspace instruction files ────────────────────────────────
+# AGENTS.md and SOUL.md are instructions, not state — always keep them current.
+mkdir -p "${OPENCLAW_HOME}/workspace"
+[[ -f /etc/openclaw/workspace/AGENTS.md ]] \
+    && cp /etc/openclaw/workspace/AGENTS.md "${OPENCLAW_HOME}/workspace/AGENTS.md"
+[[ -f /etc/openclaw/workspace/SOUL.md ]] \
+    && cp /etc/openclaw/workspace/SOUL.md "${OPENCLAW_HOME}/workspace/SOUL.md"
 
 # ── SSH credentials for git push ──────────────────────────────────────────
 # Source keys live in the repo bind-mount (.ssh/ is gitignored).

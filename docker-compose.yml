@@ -25,13 +25,18 @@ services:
       OPENCLAW_STATE_DIR:     /home/openclaw/.openclaw
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
       NODE_ENV:               production
+      # Host path to this repo — needed so docker compose commands resolve paths correctly
+      REPO_HOST_PATH:         /home/leonardo/openclaw-docker-agent
 
     volumes:
       - openclaw-state:/home/openclaw/.openclaw
       - /home/leonardo/openclaw-docker-agent:/home/openclaw/repo
+      - /var/run/docker.sock:/var/run/docker.sock
 
     # ── Security hardening ─────────────────────────────────────────────────
     user: "10001:10001"
+    group_add:
+      - "999"     # docker group (GID 999) — allows access to /var/run/docker.sock
     security_opt:
       - no-new-privileges:true
     cap_drop:
