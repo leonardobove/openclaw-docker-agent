@@ -10,5 +10,5 @@ FROM caddy:2-alpine
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 
-# Verify module is present
-RUN caddy list-modules | grep ratelimit
+# Verify module is present (module registers as http.handlers.rate_limit)
+RUN caddy list-modules | grep rate_limit
