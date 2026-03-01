@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Daily Google Alerts summarizer — fetches alerts from Gmail,
-extracts article titles/URLs, fetches snippets, summarizes via Claude.
+extracts article titles/URLs, fetches full PDF where available,
+falls back to webpage snippet, summarizes via Claude.
 """
 
 import imaplib
@@ -10,10 +11,17 @@ import os
 import re
 import json
 import sys
+import io
 from email.header import decode_header
 from urllib.request import urlopen, Request
 from urllib.parse import urlparse, parse_qs, unquote
 from bs4 import BeautifulSoup
+
+try:
+    from pypdf import PdfReader
+    HAS_PYPDF = True
+except ImportError:
+    HAS_PYPDF = False
 
 def load_env():
     env_path = os.path.join(os.path.dirname(__file__), "../config/gmail.env")
@@ -52,7 +60,66 @@ def fetch_articles_from_alert(msg):
             break
     return articles
 
-def fetch_snippet(url, max_chars=800):
+def get_pdf_url(url):
+    """Try to find a PDF URL from a given article URL."""
+    # arXiv: convert abs to pdf
+    arxiv_abs = re.match(r"https?://arxiv\.org/abs/(\d+\.\d+)", url)
+    if arxiv_abs:
+        return f"https://arxiv.org/pdf/{arxiv_abs.group(1)}.pdf"
+
+    # arXiv HTML variant
+    arxiv_html = re.match(r"https?://arxiv\.org/html/(\d+\.\d+)", url)
+    if arxiv_html:
+        return f"https://arxiv.org/pdf/{arxiv_html.group(1)}.pdf"
+
+    # Nature: try to get PDF link from page
+    if "nature.com" in url or "springer.com" in url or "pmc" in url:
+        return None  # will try page scraping for PDF link
+
+    return None
+
+def scrape_pdf_link_from_page(url):
+    """Try to find a PDF download link on the article page."""
+    try:
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(req, timeout=8) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        soup = BeautifulSoup(html, "html.parser")
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            text = a.get_text(strip=True).lower()
+            if "pdf" in href.lower() or "pdf" in text:
+                if href.startswith("http"):
+                    return href
+                elif href.startswith("/"):
+                    parsed = urlparse(url)
+                    return f"{parsed.scheme}://{parsed.netloc}{href}"
+    except Exception:
+        pass
+    return None
+
+def fetch_pdf_text(pdf_url, max_chars=4000):
+    """Download a PDF and extract its text."""
+    if not HAS_PYPDF:
+        return None
+    try:
+        req = Request(pdf_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(req, timeout=15) as resp:
+            pdf_data = resp.read()
+        reader = PdfReader(io.BytesIO(pdf_data))
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+            if len(text) > max_chars:
+                break
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:max_chars] if text else None
+    except Exception as e:
+        print(f"    PDF fetch failed ({pdf_url[:60]}): {e}", file=sys.stderr)
+        return None
+
+def fetch_webpage_snippet(url, max_chars=1500):
+    """Fetch a text snippet from a webpage."""
     try:
         req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urlopen(req, timeout=8) as resp:
@@ -66,22 +133,52 @@ def fetch_snippet(url, max_chars=800):
     except Exception as e:
         return f"[Could not fetch: {e}]"
 
+def fetch_best_content(url):
+    """Try PDF first, fall back to webpage snippet."""
+    # Try direct PDF URL
+    pdf_url = get_pdf_url(url)
+    if pdf_url:
+        print(f"    Trying PDF: {pdf_url[:70]}", file=sys.stderr)
+        text = fetch_pdf_text(pdf_url)
+        if text:
+            return text, "pdf"
+
+    # Try scraping PDF link from page
+    pdf_link = scrape_pdf_link_from_page(url)
+    if pdf_link:
+        print(f"    Found PDF link on page: {pdf_link[:70]}", file=sys.stderr)
+        text = fetch_pdf_text(pdf_link)
+        if text:
+            return text, "pdf"
+
+    # Fall back to webpage
+    print(f"    Falling back to webpage snippet", file=sys.stderr)
+    return fetch_webpage_snippet(url), "webpage"
+
 def summarize_with_claude(articles_by_topic):
     content_parts = []
     for topic, articles in articles_by_topic.items():
         content_parts.append(f"\n### Topic: {topic}\n")
         for art in articles:
-            content_parts.append(f"Title: {art['title']}\nURL: {art['url']}\nSnippet: {art['snippet']}\n")
+            source_type = art.get("source_type", "webpage")
+            content_parts.append(
+                f"Title: {art['title']}\n"
+                f"URL: {art['url']}\n"
+                f"Content source: {source_type}\n"
+                f"Content: {art['content']}\n"
+            )
 
     content = "\n".join(content_parts)
 
     prompt = f"""You are a research assistant. Below are today's Google Alerts articles grouped by topic.
+Some articles include full paper text (PDF), others are webpage summaries.
 
-Write a concise daily digest:
+Write a concise but detailed daily digest:
 - Start with a brief intro line with today's date
-- For each topic, write 2-4 bullet points summarizing key news/findings
-- Keep it informative but brief, suitable for a Telegram message
-- Use emoji bullets to distinguish topics (e.g. ⚛️ for quantum, 🤖 for AI)
+- For each topic, write 3-5 bullet points summarizing key findings, methods, and implications
+- For papers with full PDF content, include specific technical details (methods, results, numbers)
+- Keep it informative and precise, suitable for a researcher reading on Telegram
+- Use emoji bullets to distinguish topics (⚛️ quantum, 🤖 AI/ML, 🔬 science, 💊 medicine, 💰 markets)
 - Plain text only, no markdown headers
 
 Articles:
@@ -92,7 +189,7 @@ Write the digest now:"""
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     payload = {
         "model": "claude-sonnet-4-6",
-        "max_tokens": 1024,
+        "max_tokens": 2048,
         "messages": [{"role": "user", "content": prompt}]
     }
     req = Request(
@@ -104,12 +201,13 @@ Write the digest now:"""
             "content-type": "application/json"
         }
     )
-    with urlopen(req, timeout=30) as resp:
+    with urlopen(req, timeout=60) as resp:
         result = json.loads(resp.read())
     return result["content"][0]["text"]
 
 def main():
     load_env()
+
     gmail_address = os.environ.get("GMAIL_ADDRESS", "")
     gmail_password = os.environ.get("GMAIL_APP_PASSWORD", "")
 
@@ -150,8 +248,10 @@ def main():
         existing_urls = {a["url"] for a in articles_by_topic[topic]}
         for art in articles[:3]:
             if art["url"] not in existing_urls:
-                print(f"  Fetching snippet: {art['title'][:60]}", file=sys.stderr)
-                art["snippet"] = fetch_snippet(art["url"])
+                print(f"  Processing: {art['title'][:65]}", file=sys.stderr)
+                content, source_type = fetch_best_content(art["url"])
+                art["content"] = content
+                art["source_type"] = source_type
                 articles_by_topic[topic].append(art)
                 existing_urls.add(art["url"])
 
