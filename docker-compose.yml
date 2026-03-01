@@ -81,9 +81,6 @@ services:
     restart: unless-stopped
 
     env_file: .env
-    environment:
-      CADDY_AUTH_USER: ${CADDY_AUTH_USER:?Set CADDY_AUTH_USER in .env}
-      CADDY_AUTH_HASH: ${CADDY_AUTH_HASH:?Set CADDY_AUTH_HASH in .env}
 
     # No ports published to host — only cloudflared reaches caddy internally
     expose:
