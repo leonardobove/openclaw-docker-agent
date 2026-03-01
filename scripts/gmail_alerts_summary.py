@@ -205,6 +205,37 @@ Write the digest now:"""
         result = json.loads(resp.read())
     return result["content"][0]["text"]
 
+def archive_alerts(gmail_address, gmail_password, label="Google Alerts"):
+    """Apply label and archive (remove from INBOX) all Google Alerts emails."""
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail.login(gmail_address, gmail_password)
+    mail.select("INBOX")
+
+    # Create label if it doesn't exist
+    status, existing = mail.list()
+    label_exists = any(label.encode() in l for l in existing)
+    if not label_exists:
+        mail.create(f'"{label}"')
+        print(f"  Created label: {label}", file=sys.stderr)
+
+    # Find all Google Alerts in inbox
+    status, data = mail.search(None, "FROM", "googlealerts-noreply@google.com")
+    ids = data[0].split()
+    if not ids:
+        mail.logout()
+        return 0
+
+    for num in ids:
+        # Copy to the label folder
+        mail.copy(num, f'"{label}"')
+        # Mark as deleted in INBOX (archives it)
+        mail.store(num, "+FLAGS", "\\Deleted")
+
+    mail.expunge()
+    mail.logout()
+    print(f"  Archived {len(ids)} alerts to '{label}'", file=sys.stderr)
+    return len(ids)
+
 def main():
     load_env()
 
@@ -265,5 +296,10 @@ def main():
     summary = summarize_with_claude(articles_by_topic)
     print(summary)
 
+    # Archive processed alerts
+    print("Archiving alerts...", file=sys.stderr)
+    archive_alerts(gmail_address, gmail_password)
+
 if __name__ == "__main__":
     main()
+
