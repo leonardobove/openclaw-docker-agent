@@ -28,6 +28,7 @@ services:
 
     volumes:
       - openclaw-state:/home/openclaw/.openclaw
+      - /home/leonardo/openclaw-docker-agent:/home/openclaw/repo
 
     # ── Security hardening ─────────────────────────────────────────────────
     user: "10001:10001"

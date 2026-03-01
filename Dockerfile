@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
         jq \
         make \
+        openssh-client \
         python3 \
         python3-pip \
         python3-venv \
@@ -46,7 +47,8 @@ RUN mkdir -p /etc/openclaw/workspace \
 COPY --chown=openclaw:openclaw config/openclaw.json       /etc/openclaw/openclaw.json
 COPY --chown=openclaw:openclaw config/workspace/AGENTS.md /etc/openclaw/workspace/AGENTS.md
 COPY --chown=openclaw:openclaw config/workspace/SOUL.md   /etc/openclaw/workspace/SOUL.md
-COPY --chmod=755               scripts/entrypoint.sh      /usr/local/bin/entrypoint.sh
+COPY                           scripts/entrypoint.sh      /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 USER openclaw
