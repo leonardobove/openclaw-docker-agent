@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenClaw Agent — Caddy (HTTP-only, internal)
+# TLS is terminated by Cloudflare at the edge — not needed here.
+# Listens on port 8080. Only reachable by cloudflared within Docker network.
+# ─────────────────────────────────────────────────────────────────────────────
+
+:8080 {
+
+    # ── Authentication ─────────────────────────────────────────────────────
+    basicauth /* {
+        {$CADDY_AUTH_USER} {$CADDY_AUTH_HASH}
+    }
+
+    # ── Rate limiting (requires caddy-ratelimit module) ────────────────────
+    # 60 requests/minute per IP
+    rate_limit {remote_host} 60r/m
+
+    # ── Request body size limit ────────────────────────────────────────────
+    request_body {
+        max_size 10MB
+    }
+
+    # ── Security headers ───────────────────────────────────────────────────
+    header {
+        X-Content-Type-Options  "nosniff"
+        X-Frame-Options         "SAMEORIGIN"
+        X-XSS-Protection        "1; mode=block"
+        Referrer-Policy         "strict-origin-when-cross-origin"
+        Permissions-Policy      "geolocation=(), microphone=(), camera=()"
+        Cache-Control           "no-store"
+        -Server
+        -X-Powered-By
+    }
+
+    # ── Reverse proxy → OpenClaw gateway ──────────────────────────────────
+    reverse_proxy openclaw:18789 {
+        header_up Host              {upstream_hostport}
+        header_up X-Real-IP         {remote_host}
+        header_up X-Forwarded-For   {remote_host}
+        header_up X-Forwarded-Proto https
+
+        # Pass WebSocket headers through
+        header_up Connection        {>Connection}
+        header_up Upgrade           {>Upgrade}
+
+        transport http {
+            dial_timeout            10s
+            response_header_timeout 120s
+            keepalive               2m
+            keepalive_idle_conns    10
+        }
+
+        health_uri      /
+        health_interval 30s
+        health_timeout  10s
+
+        lb_try_duration 5s
+    }
+
+    # ── Access log ─────────────────────────────────────────────────────────
+    log {
+        output stderr
+        format json
+        level  INFO
+    }
+}

@@ -1,0 +1,32 @@
+# ── Normalize line endings ────────────────────────────────────────────────────
+# All text files: store as LF in repo, checkout as native on each OS
+* text=auto eol=lf
+
+# Shell scripts: always LF (they run on Linux VPS)
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Windows scripts: CRLF on Windows checkout
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Docker / config files: always LF
+Dockerfile      text eol=lf
+Caddyfile       text eol=lf
+Makefile        text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.json          text eol=lf
+*.json5         text eol=lf
+
+# Docs
+*.md            text eol=lf
+
+# Binary files: no line ending conversion
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.ico  binary
+*.gz   binary
+*.zip  binary

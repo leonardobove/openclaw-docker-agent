@@ -1,0 +1,169 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenClaw Autonomous Coding Agent — Docker Compose
+#
+# Services:
+#   openclaw     — AI coding agent (OpenClaw + Ollama via qwen3-coder)
+#   caddy        — Internal reverse proxy: basicauth + rate limiting (HTTP only)
+#   cloudflared  — Cloudflare Tunnel (trycloudflare.com — no account needed)
+#
+# Access: check tunnel URL with:  make url
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── OpenClaw Agent ──────────────────────────────────────────────────────
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OPENCLAW_VERSION: ${OPENCLAW_VERSION:-latest}
+    image: openclaw-agent:local
+    container_name: openclaw-agent
+    restart: unless-stopped
+
+    env_file: .env
+    environment:
+      OPENCLAW_HOME:          /home/openclaw/.openclaw
+      OPENCLAW_STATE_DIR:     /home/openclaw/.openclaw
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
+      OLLAMA_API_KEY:         ${OLLAMA_API_KEY:-ollama-local}
+      OLLAMA_BASE_URL:        ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      NODE_ENV:               production
+
+    volumes:
+      - openclaw-state:/home/openclaw/.openclaw
+
+    networks:
+      - openclaw-net
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # ── Security hardening ───────────────────────────────────────────────
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    deploy:
+      resources:
+        limits:
+          cpus:   "2.0"
+          memory: 2048M
+        reservations:
+          cpus:   "0.25"
+          memory: 256M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    healthcheck:
+      test:         ["CMD-SHELL", "curl -sf http://localhost:18789/ > /dev/null 2>&1 || exit 1"]
+      interval:     30s
+      timeout:      10s
+      retries:      3
+      start_period: 90s
+
+  # ── Caddy (internal only — HTTP on port 8080) ───────────────────────────
+  # Provides: basicauth, rate limiting, request size cap, security headers
+  # TLS is handled by Cloudflare at the edge — not needed here
+  caddy:
+    build:
+      context:    caddy/
+      dockerfile: Dockerfile
+    image: openclaw-caddy:local
+    container_name: openclaw-caddy
+    restart: unless-stopped
+
+    env_file: .env
+    environment:
+      CADDY_AUTH_USER: ${CADDY_AUTH_USER:?Set CADDY_AUTH_USER in .env}
+      CADDY_AUTH_HASH: ${CADDY_AUTH_HASH:?Set CADDY_AUTH_HASH in .env}
+
+    # No ports published to host — only cloudflared reaches caddy internally
+    expose:
+      - "8080"
+
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
+    networks:
+      - openclaw-net
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # No NET_BIND_SERVICE needed — port 8080 > 1024
+
+    deploy:
+      resources:
+        limits:
+          cpus:   "0.25"
+          memory: 128M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    depends_on:
+      openclaw:
+        condition: service_healthy
+
+  # ── Cloudflare Tunnel (trycloudflare.com — no account required) ─────────
+  # Provides public HTTPS access. Random URL printed in logs on each start.
+  # Run: make url    to extract the current URL.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: openclaw-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://caddy:8080
+
+    networks:
+      - openclaw-net
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    deploy:
+      resources:
+        limits:
+          cpus:   "0.25"
+          memory: 64M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+    depends_on:
+      - caddy
+
+# ── Networks ────────────────────────────────────────────────────────────────
+networks:
+  openclaw-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-openclaw
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ── Volumes ─────────────────────────────────────────────────────────────────
+volumes:
+  openclaw-state:
+    driver: local
+    labels:
+      com.openclaw.description: "Agent persistent state: workspace, sessions, memory"
