@@ -29,10 +29,14 @@ Single container, no public URL needed.
 
 Stack is a single container. `make up` builds and starts it.
 
-**First-time Telegram pairing:**
+**First-time Telegram pairing (TWO steps):**
 1. Open Telegram → find your bot → send `/start`
 2. Bot replies with a pairing code
-3. Send the code back to complete pairing — done forever
+3. Send the code back to the bot
+4. On the server, approve it: `docker compose exec openclaw openclaw pairing approve <CODE>`
+
+Without step 4 the user is permanently blocked — the bot stays silent after receiving the code.
+List pending requests: `docker compose exec openclaw openclaw pairing list`
 
 ---
 
@@ -89,6 +93,8 @@ docker logs -f openclaw-agent   # Alias for make logs
    `docker compose down -v` before `make up` so the fresh config is copied from the image.
 10. trycloudflare.com rate-limits IPs that create too many tunnels rapidly (error 1045).
     The old cloudflared approach has been removed — Telegram has no such issue.
+11. `dmPolicy: "pairing"` requires explicit admin approval via `openclaw pairing approve <CODE>`.
+    The bot does NOT auto-admit users after they send the code back.
 
 ---
 
@@ -102,6 +108,37 @@ ANTHROPIC_API_KEY=<from console.anthropic.com>
 ```
 
 Generate with: `python3 scripts/gen-env.py`
+
+---
+
+## Switching LLMs
+
+### Claude → Gemini (free)
+
+1. Add `GEMINI_API_KEY=<key>` to `.env` (get free key at aistudio.google.com/apikey)
+2. Edit `config/openclaw.json` — replace provider + agent model:
+   ```json
+   "models": {
+     "providers": {
+       "google": {
+         "apiKey": "${GEMINI_API_KEY}",
+         "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+         "models": [
+           { "id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "contextWindow": 1000000, "maxTokens": 8192 },
+           { "id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "contextWindow": 1000000, "maxTokens": 8192 }
+         ]
+       }
+     }
+   }
+   ```
+   Update `agents.defaults.model.primary` → `"google/gemini-2.0-flash"`.
+3. Rebuild: `make build && docker compose up -d`
+4. Verify: `make logs | grep "agent model"` → should show `google/gemini-2.0-flash`
+
+### Gemini → Claude
+
+Reverse the above. Provider key is `anthropic`, requires `"api": "anthropic-messages"` on
+the provider AND on each model entry, plus `baseUrl: "https://api.anthropic.com"`.
 
 ---
 

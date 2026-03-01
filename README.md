@@ -1,328 +1,148 @@
 # openclaw-docker-agent
 
-Self-hosted autonomous AI coding agent powered by [OpenClaw](https://openclaw.ai) and a local [Ollama](https://ollama.ai) model. Runs in Docker on a personal Linux VPS. Accessible from anywhere via a secure Cloudflare Tunnel.
+Self-hosted autonomous AI coding agent powered by [OpenClaw](https://openclaw.ai).
+Controlled from your phone via Telegram. Runs in a single Docker container. No public URL required.
 
 ```
-Your Phone
-    │ HTTPS (trycloudflare.com — no account needed)
-    ▼
-Cloudflare Edge
-    │
-    ▼
-cloudflared  ──►  Caddy :8080  ──►  OpenClaw :18789
-(VPS, Docker)     (auth + rate      (VPS, Docker)
-                   limiting)              │
-                                          │ Ollama API
-                                          ▼
-                              SSH Reverse Tunnel
-                                          │
-                                          ▼
-                              Ollama :11434 (your local machine)
-                              Windows / macOS / Linux
+Telegram app (phone) ↔ Telegram servers ↔ OpenClaw (Docker) → Anthropic Claude API
 ```
-
----
-
-## What runs where
-
-| Component     | Location          | Notes                                  |
-|---------------|-------------------|----------------------------------------|
-| Ollama        | Your local machine | Windows, macOS, or Linux              |
-| Models        | Your local machine | qwen3-coder, llama3.1:8b, etc.        |
-| OpenClaw      | VPS (Docker)      | The AI agent runtime                  |
-| Caddy         | VPS (Docker)      | Reverse proxy — auth + rate limiting  |
-| cloudflared   | VPS (Docker)      | Public HTTPS URL for phone access     |
-| SSH tunnel    | Your local machine | Built-in SSH — nothing to install    |
 
 ---
 
 ## Prerequisites
 
-### VPS (Linux only)
-- Ubuntu 20.04 LTS or later (Debian also works)
-- 8 GB+ RAM (16 GB recommended for large models)
-- SSH access with `sudo` rights
-- Outbound internet access
+- Linux machine with Docker and Docker Compose installed
+- A Telegram account
+- An [Anthropic API key](https://console.anthropic.com) (Claude)
+- Git
 
-### Local machine (any OS — Ollama host)
-- [Ollama](https://ollama.ai) installed and running
-- SSH client (built into Windows 10+, macOS, and all Linux distros)
-- At least one model pulled — see [Recommended models](#recommended-models)
-- Git (to clone this repo)
+If you need to set up Docker on a fresh Linux machine, run:
+
+```bash
+bash scripts/homeserver/setup.sh
+```
+
+This handles static IP, SSH hardening, firewall, Tailscale, and Docker in one go.
 
 ---
 
 ## Quick start
 
-### 1. Clone on both machines
+### 1. Clone the repo
 
 ```bash
-# On VPS and on your local machine:
 git clone https://github.com/YOUR_USERNAME/openclaw-docker-agent.git
 cd openclaw-docker-agent
 ```
 
-### 2. VPS — one-time setup
+### 2. Create a Telegram bot
+
+Open Telegram → search for `@BotFather` → send `/newbot` → follow the prompts.
+Copy the bot token (looks like `1234567890:AAH-...`).
+
+### 3. Generate your `.env`
 
 ```bash
-bash scripts/setup-vps.sh
+python3 scripts/gen-env.py
 ```
 
-Installs Docker Engine, sets `GatewayPorts yes` in sshd, configures firewall.
-If Docker group was just added, run `exec newgrp docker` before continuing.
+This prompts for your Telegram bot token and Anthropic API key, and writes a clean `.env`.
 
-### 3. VPS — configure environment
-
-```bash
-cp .env.example .env
-
-# Generate gateway token
-openssl rand -hex 32
-# Paste into OPENCLAW_GATEWAY_TOKEN= in .env
-
-# Generate Caddy password hash (choose any password)
-make gen-auth PASSWORD='your_strong_password'
-# Paste the $2a$... output into CADDY_AUTH_HASH= in .env
-
-# Set your username
-# CADDY_AUTH_USER=agent   (or whatever you prefer)
-```
-
-### 4. VPS — start the stack
+### 4. Start the agent
 
 ```bash
 make up
-# Prints your phone URL after ~15 seconds, e.g.:
-# https://some-random-words.trycloudflare.com
 ```
 
-Run `make url` any time to see the current URL.
+### 5. Pair your Telegram account (one time)
 
-### 5. Local machine — start the Ollama tunnel
-
-**Windows** (CMD or PowerShell — built-in SSH, no install):
-```bat
-scripts\tunnel.bat ubuntu@YOUR_VPS_IP
-```
-
-**macOS / Linux**:
-```bash
-./scripts/tunnel.sh ubuntu@YOUR_VPS_IP
-```
-
-Keep this terminal open. The agent needs the tunnel running to reach Ollama.
-
-### 6. Open on your phone
-
-Visit the URL from step 4.
-Login with the username/password you set in `.env`.
-
----
-
-## Home server setup (behind a home router)
-
-If your Linux machine is on a home LAN behind a NAT router, use the dedicated
-home server setup instead of the generic VPS setup. It handles everything the
-cloud VPS setup does, plus the home-specific requirements.
-
-```
-Your Router (NAT)
-    │
-    └── Linux Home Server  ←── this machine
-            │
-            ├── Docker (OpenClaw + Caddy + cloudflared)
-            ├── Static LAN IP  (no address changes on reboot)
-            ├── Hardened SSH   (key-based only + fail2ban)
-            ├── ufw firewall   (LAN SSH only, all else blocked)
-            └── Tailscale      (remote SSH from anywhere, no port forwarding)
-```
-
-**No router port forwarding is required.** Everything uses outbound connections:
-- cloudflared makes outbound connections to Cloudflare → phone access works
-- Tailscale makes outbound connections → remote SSH works
-- SSH reverse tunnel from your Windows PC is outbound → Ollama access works
-
-### Home server quick start
+1. Open Telegram → find your bot → send `/start`
+2. The bot replies with a pairing code (e.g. `BYGFKLR9`)
+3. Send that code back to the bot
+4. On the server, approve it:
 
 ```bash
-# Clone on your Linux home server
-git clone https://github.com/YOUR_USERNAME/openclaw-docker-agent.git
-cd openclaw-docker-agent
-
-# Run the master setup script — walks through each step with confirmation
-bash scripts/homeserver/setup.sh
+docker compose exec openclaw openclaw pairing approve <CODE>
 ```
 
-The master script runs these in order:
-
-| Script | What it does |
-|---|---|
-| `homeserver/01-static-ip.sh` | Reads your current LAN IP, writes a static netplan config |
-| `homeserver/02-ssh-hardening.sh` | Disables password auth, enables key-only, installs fail2ban |
-| `homeserver/03-firewall.sh` | Sets ufw rules for home server (LAN SSH only, Ollama blocked) |
-| `homeserver/04-tailscale.sh` | Installs Tailscale for remote SSH without port forwarding |
-| `setup-vps.sh` | Installs Docker Engine, sets sshd GatewayPorts |
-
-Each step asks for confirmation before making changes and is safe to re-run.
-
-### After home server setup
+You can list pending requests with:
 
 ```bash
-# Apply docker group (no full logout needed)
-exec newgrp docker
-
-# Configure and start the stack
-cp .env.example .env
-make gen-auth PASSWORD='your_password'   # paste into CADDY_AUTH_HASH in .env
-nano .env                                # also fill OPENCLAW_GATEWAY_TOKEN
-make up
-make url                                 # get your phone URL
+docker compose exec openclaw openclaw pairing list
 ```
 
-### Ollama tunnel — home vs. away
-
-| Location | Tunnel command |
-|---|---|
-| Home LAN (Windows) | `scripts\tunnel.bat user@192.168.x.x` (local IP) |
-| Away from home (Windows) | `scripts\tunnel.bat user@100.x.x.x` (Tailscale IP) |
-| Home LAN (macOS/Linux) | `./scripts/tunnel.sh user@192.168.x.x` |
-| Away from home (macOS/Linux) | `./scripts/tunnel.sh user@100.x.x.x` |
-
-Find your Tailscale IP on the server: `tailscale ip -4`
-
-### Add your SSH key before running setup
-
-The SSH hardening script disables password authentication. Make sure your
-public key is on the server first:
-
-```bash
-# From your local machine (Windows PowerShell, macOS Terminal, or Linux):
-ssh-copy-id user@192.168.x.x
-
-# Or manually on the server:
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-echo 'ssh-ed25519 AAAA...' >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-```
-
----
-
-## Recommended models
-
-Pull on your local machine before starting the tunnel:
-
-```bash
-# Best — strongest coding model (~19 GB download)
-ollama pull qwen3-coder
-
-# Good — solid coding ability, lighter weight (~9 GB)
-ollama pull qwen2.5-coder:14b
-
-# Smallest — use for testing the setup (~5 GB)
-ollama pull llama3.1:8b
-```
-
-To add more models, update `config/openclaw.json` and run `make restart`.
+That's it — send a message to your bot and Claude responds.
 
 ---
 
 ## Daily usage
 
-### VPS commands
-
 ```bash
-make up           # Start stack + print tunnel URL
-make down         # Stop everything
-make url          # Show current phone URL
-make logs         # Stream agent logs
-make logs-caddy   # Stream Caddy logs
-make logs-tunnel  # Stream cloudflared logs
-make shell        # Open bash inside the agent container
-make status       # Show container and volume status
-make restart      # Restart agent only (without rebuilding)
-```
-
-### Local machine commands
-
-```bash
-# Linux / macOS
-./scripts/tunnel.sh ubuntu@YOUR_VPS_IP
-
-# Windows
-scripts\tunnel.bat ubuntu@YOUR_VPS_IP
-
-# Push updated files to VPS after local edits
-make deploy VPS_USER=ubuntu VPS_HOST=YOUR_VPS_IP
+make up        # Build image and start the agent
+make down      # Stop the agent
+make restart   # Restart without rebuilding
+make logs      # Stream agent logs
+make shell     # Bash shell inside the container
+make status    # Show container and volume status
+make build     # Force rebuild image (no cache)
+make reset     # Wipe agent state volume and restart fresh
+make upgrade   # Upgrade OpenClaw to latest and rebuild
+make clean     # Remove container, image, and volume
 ```
 
 ---
 
-## Resetting and upgrading
+## Switching the LLM
 
-```bash
-# Wipe all agent state (workspace, sessions, memory) and restart fresh
-make reset
+### Switch to Google Gemini (free)
 
-# Upgrade OpenClaw to the latest release
-make upgrade
+Get a free API key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 
-# Force rebuild all Docker images from scratch
-make build
-```
+1. Add to `.env`:
+   ```
+   GEMINI_API_KEY=AIzaSy...
+   ```
 
----
+2. Edit `config/openclaw.json` — replace the `models` block:
+   ```json
+   "models": {
+     "providers": {
+       "google": {
+         "apiKey": "${GEMINI_API_KEY}",
+         "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+         "models": [
+           { "id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "contextWindow": 1000000, "maxTokens": 8192 },
+           { "id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "contextWindow": 1000000, "maxTokens": 8192 }
+         ]
+       }
+     }
+   },
+   "agents": {
+     "defaults": {
+       "model": {
+         "primary": "google/gemini-2.0-flash",
+         "fallbacks": ["google/gemini-1.5-flash"]
+       }
+     }
+   }
+   ```
 
-## Revoking remote access
+3. Rebuild and restart:
+   ```bash
+   make build && docker compose up -d
+   ```
 
-```bash
-# Stop everything (stack + public URL immediately gone)
-make down
+4. Verify — check the logs:
+   ```bash
+   make logs | grep "agent model"
+   # Expected: [gateway] agent model: google/gemini-2.0-flash
+   ```
+   Or ask the bot: *"what model are you?"*
 
-# Rotate the web UI password
-make gen-auth PASSWORD='new_password'
-# Update CADDY_AUTH_HASH in .env, then:
-make down && make up
+### Switch back to Anthropic Claude
 
-# Rotate the gateway token (invalidates all active API sessions)
-openssl rand -hex 32
-# Update OPENCLAW_GATEWAY_TOKEN in .env, then: make restart
-```
-
----
-
-## Security model
-
-| Control                  | Implementation                                  |
-|--------------------------|-------------------------------------------------|
-| Non-root container       | UID 10001, no capability grants                 |
-| No host filesystem       | Named Docker volume only                        |
-| No Docker socket         | Never mounted                                   |
-| No --privileged          | Never used                                      |
-| Port 18789 not exposed   | Only reachable via Caddy on internal network    |
-| Port 11434 not exposed   | SSH tunnel only — blocked by ufw externally     |
-| Authentication layer 1   | Caddy basicauth (bcrypt password)               |
-| Authentication layer 2   | `OPENCLAW_GATEWAY_TOKEN` header                 |
-| Rate limiting            | 60 req/min per IP (caddy-ratelimit module)      |
-| Request size cap         | 10 MB max body                                  |
-| TLS                      | Cloudflare edge (automatic, no config needed)   |
-| Resource limits          | 2 CPU / 2 GB RAM max (OpenClaw container)       |
-
----
-
-## Deploying to a new VPS
-
-```bash
-# From your local machine (once repo is cloned there):
-make deploy VPS_USER=ubuntu VPS_HOST=new.vps.ip
-
-# Then on the new VPS:
-ssh ubuntu@new.vps.ip
-cd openclaw-docker-agent
-bash scripts/setup-vps.sh
-cp .env.example .env
-# fill in .env values...
-make up
-```
+Default config uses `anthropic/claude-sonnet-4-6`. It's already in `config/openclaw.json`.
+Make sure `ANTHROPIC_API_KEY` is set in `.env`, rebuild if you changed providers.
 
 ---
 
@@ -330,29 +150,54 @@ make up
 
 ```
 openclaw-docker-agent/
-├── README.md                     This file
-├── LICENSE                       MIT
-├── .env.example                  Environment variable template
-├── .gitignore
-├── Dockerfile                    OpenClaw agent image (node:22-slim)
-├── docker-compose.yml            Stack: openclaw + caddy + cloudflared
-├── Caddyfile                     HTTP-only reverse proxy config
-├── Makefile                      All operational commands
-├── SETUP.md                      Detailed operations reference
-├── caddy/
-│   └── Dockerfile                Custom Caddy + caddy-ratelimit module
 ├── config/
-│   ├── openclaw.json             OpenClaw gateway + model config
+│   ├── openclaw.json          OpenClaw config — model provider, gateway, Telegram channel
 │   └── workspace/
-│       ├── AGENTS.md             Agent behavior instructions
-│       └── SOUL.md               Agent persona
-└── scripts/
-    ├── entrypoint.sh             Docker container init + startup
-    ├── setup-vps.sh              One-time VPS setup (run as normal user with sudo)
-    ├── tunnel.sh                 Ollama SSH tunnel — macOS / Linux
-    ├── tunnel.bat                Ollama SSH tunnel — Windows (CMD)
-    └── tunnel.ps1                Ollama SSH tunnel — Windows (PowerShell)
+│       ├── AGENTS.md          Agent behaviour instructions (seeded into agent workspace)
+│       └── SOUL.md            Agent persona
+├── scripts/
+│   ├── entrypoint.sh          Container init — seeds config on first run, starts gateway
+│   ├── gen-env.py             Interactive .env generator
+│   ├── setup-claude.sh        Install Claude Code CLI and open a session in this repo
+│   └── homeserver/            Linux home server one-time setup scripts
+│       ├── setup.sh           Master script — runs all steps below
+│       ├── 01-static-ip.sh    Assign static LAN IP via netplan
+│       ├── 02-ssh-hardening.sh  Key-only SSH + fail2ban
+│       ├── 03-firewall.sh     ufw rules
+│       └── 04-tailscale.sh    Tailscale for remote SSH
+├── docker-compose.yml         Single-container stack
+├── Dockerfile                 OpenClaw agent image (node:22-slim)
+├── Makefile                   All operational commands
+├── .env.example               Environment variable template
+└── .gitignore
 ```
+
+---
+
+## .env variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPENCLAW_VERSION` | No | npm version — `latest` or pin e.g. `2026.2.26` |
+| `OPENCLAW_GATEWAY_TOKEN` | Yes | ≥32 char secret. Generate: `openssl rand -hex 32` |
+| `TELEGRAM_BOT_TOKEN` | Yes | From `@BotFather` |
+| `ANTHROPIC_API_KEY` | Yes* | From [console.anthropic.com](https://console.anthropic.com) |
+| `GEMINI_API_KEY` | Yes* | From [aistudio.google.com](https://aistudio.google.com/apikey) — free |
+
+*One LLM API key required (Anthropic or Google).
+
+---
+
+## Security
+
+| Control | Implementation |
+|---|---|
+| Non-root container | UID 10001, `cap_drop: ALL` |
+| No host filesystem | Named Docker volume only |
+| No Docker socket | Never mounted |
+| No ports exposed | Gateway on loopback only — Telegram polls outbound |
+| Telegram auth | `dmPolicy: pairing` — explicit admin approval per user |
+| Resource limits | 2 CPU / 2 GB RAM max |
 
 ---
 
