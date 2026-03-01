@@ -22,8 +22,6 @@ ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 
 DEFAULTS = {
     "OPENCLAW_VERSION": "latest",
-    "OLLAMA_API_KEY": "ollama-local",
-    "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
     "CADDY_AUTH_USER": "agent",
 }
 
@@ -50,6 +48,14 @@ def main():
     token = run(["openssl", "rand", "-hex", "32"], "openssl rand")
     print(f"  Token: {token[:8]}...{token[-4:]}")
 
+    # Gemini API key
+    print()
+    print("Get a free Gemini API key at: https://aistudio.google.com/apikey")
+    gemini_key = input("Paste your GEMINI_API_KEY: ").strip()
+    if not gemini_key:
+        print("ERROR: GEMINI_API_KEY cannot be empty.")
+        sys.exit(1)
+
     # Caddy password
     print()
     print(f"Caddy web UI user: {DEFAULTS['CADDY_AUTH_USER']}")
@@ -69,8 +75,7 @@ def main():
     lines = [
         f"OPENCLAW_VERSION={DEFAULTS['OPENCLAW_VERSION']}",
         f"OPENCLAW_GATEWAY_TOKEN={token}",
-        f"OLLAMA_API_KEY={DEFAULTS['OLLAMA_API_KEY']}",
-        f"OLLAMA_BASE_URL={DEFAULTS['OLLAMA_BASE_URL']}",
+        f"GEMINI_API_KEY={gemini_key}",
         f"CADDY_AUTH_USER={DEFAULTS['CADDY_AUTH_USER']}",
         f"CADDY_AUTH_HASH={caddy_hash}",
     ]

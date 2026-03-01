@@ -27,8 +27,6 @@ services:
       OPENCLAW_HOME:          /home/openclaw/.openclaw
       OPENCLAW_STATE_DIR:     /home/openclaw/.openclaw
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
-      OLLAMA_API_KEY:         ${OLLAMA_API_KEY:-ollama-local}
-      OLLAMA_BASE_URL:        ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       NODE_ENV:               production
 
     volumes:

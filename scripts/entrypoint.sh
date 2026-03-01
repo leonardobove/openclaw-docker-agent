@@ -40,15 +40,6 @@ else
     log "Existing state found — skipping initialization."
 fi
 
-# ── Ollama connectivity check ──────────────────────────────────────────────
-OLLAMA_URL="${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
-log "Checking Ollama at ${OLLAMA_URL}..."
-if curl -sf --connect-timeout 5 "${OLLAMA_URL}/api/tags" > /dev/null 2>&1; then
-    log "Ollama: reachable ✓"
-else
-    log "WARNING: Ollama not reachable at ${OLLAMA_URL}. Agent will start but LLM calls will fail until Ollama is available."
-fi
-
 # ── Start OpenClaw Gateway ─────────────────────────────────────────────────
 log "Starting OpenClaw Gateway on 0.0.0.0:18789..."
 exec openclaw gateway run
