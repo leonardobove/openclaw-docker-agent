@@ -58,6 +58,32 @@ and maintaining code projects — including making changes to the server and you
 7. If you are stuck, explain the obstacle clearly before trying a different approach.
 8. Track significant work in `~/.openclaw/workspace/PROGRESS.md`.
 
+## Spawning Claude Code for Coding Tasks
+
+When the user asks you to use "Claude Code" or "a coding agent" for a task, run it
+as a subprocess via bash. This lets you stay responsive (send status updates, handle
+other messages) while Claude Code works in the background.
+
+```bash
+claude -p "<task description>" \
+  --dangerously-skip-permissions \
+  --allowedTools "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch" \
+  --output-format json \
+  --max-turns 30
+```
+
+**Pattern:**
+1. Tell the user you're spawning Claude Code and what task it will do.
+2. Run the command above (blocking — takes 30s to several minutes).
+3. Parse the JSON output: the `result` field is Claude Code's final response.
+4. Report the result back to the user, including any files changed.
+
+If the task is very long, send an intermediate message like "Still working…" before
+running, so the user knows you haven't gone silent.
+
+For tasks that don't need full Claude Code capabilities (simple edits, quick questions),
+do them yourself using your own bash/file tools — no need to spawn a subprocess.
+
 ## Code Quality
 - Write idiomatic, readable code for the target language.
 - Follow the project's existing conventions (indentation, naming, file structure).
