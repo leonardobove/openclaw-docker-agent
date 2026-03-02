@@ -126,9 +126,13 @@ docker compose exec ollama ollama list
 ## Moving to a different machine
 
 1. Clone the repo on the new machine
-2. Run `python3 scripts/gen-env.py` — use the **same `TELEGRAM_BOT_TOKEN`** to keep the same bot
-3. Run `make up`
-4. Re-pair your Telegram account (send `/start` → code → approve)
+2. Install Claude Code memory (so Claude has full project context):
+   ```bash
+   bash scripts/install-claude-memory.sh
+   ```
+3. Run `python3 scripts/gen-env.py` — use the **same `TELEGRAM_BOT_TOKEN`** to keep the same bot
+4. Run `make up`
+5. Re-pair your Telegram account (send `/start` → code → approve)
 
 The bot identity is determined by the token — same token, same bot. The pairing step takes ~30 seconds.
 
