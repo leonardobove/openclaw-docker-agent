@@ -7,6 +7,10 @@ Accepts POST /v1/messages in Anthropic Messages API format.
 Translates to `claude -p` subprocess calls.
 Manages OAuth token refresh automatically.
 Falls back to ANTHROPIC_API_KEY if no OAuth credentials are present.
+
+Streaming note: SSE headers and initial events are sent IMMEDIATELY so the
+client doesn't time out. Pings are emitted every 5 s while claude runs.
+Content is streamed when claude exits.
 """
 
 import json
@@ -25,6 +29,7 @@ OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 TOKEN_REFRESH_BUFFER_MS = 10 * 60 * 1000  # refresh if < 10 min remaining
 CLAUDE_TOOLS = "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch"
 CLAUDE_TIMEOUT = 600  # seconds
+PING_INTERVAL = 5     # SSE ping every N seconds while claude runs
 
 
 # ── OAuth token management ──────────────────────────────────────────────────
@@ -92,10 +97,19 @@ def get_access_token():
     return oauth.get("accessToken")
 
 
+def _build_env():
+    """Build subprocess env: set OAuth token or fall back to ANTHROPIC_API_KEY."""
+    env = os.environ.copy()
+    token = get_access_token()
+    if token:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+        env.pop("ANTHROPIC_API_KEY", None)
+    return env
+
+
 # ── Conversation formatting ─────────────────────────────────────────────────
 
 def _extract_text(content):
-    """Extract plain text from an Anthropic content field (str or list)."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -108,10 +122,6 @@ def _extract_text(content):
 
 
 def format_prompt(system, messages):
-    """
-    Build a single prompt string from Anthropic-format system + messages array.
-    Wraps each turn in XML-style tags so Claude understands the conversation history.
-    """
     parts = []
     if system:
         parts.append(f"<system>\n{system}\n</system>")
@@ -123,54 +133,6 @@ def format_prompt(system, messages):
         elif role == "assistant":
             parts.append(f"<assistant>\n{text}\n</assistant>")
     return "\n".join(parts)
-
-
-# ── Claude invocation ───────────────────────────────────────────────────────
-
-def call_claude(prompt):
-    """
-    Invoke `claude -p` with the prompt, return the result text.
-    Sets CLAUDE_CODE_OAUTH_TOKEN if available, otherwise falls back to ANTHROPIC_API_KEY.
-    """
-    env = os.environ.copy()
-
-    token = get_access_token()
-    if token:
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-        # Remove API key to avoid conflicts (OAuth takes priority anyway, but cleaner)
-        env.pop("ANTHROPIC_API_KEY", None)
-    # If no token, ANTHROPIC_API_KEY from the container environment is used automatically.
-
-    cmd = [
-        "claude", "-p", prompt,
-        "--output-format", "json",
-        "--dangerously-skip-permissions",
-        "--allowedTools", CLAUDE_TOOLS,
-        "--max-turns", "20",
-    ]
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=CLAUDE_TIMEOUT,
-            env=env,
-            cwd=os.path.expanduser("~"),
-        )
-        if result.returncode == 0:
-            out = json.loads(result.stdout)
-            return out.get("result") or out.get("message") or "(no output)"
-        else:
-            err = (result.stderr or result.stdout or "unknown error").strip()
-            return f"[claude error (exit {result.returncode})] {err}"
-    except subprocess.TimeoutExpired:
-        return f"[bridge] Claude timed out after {CLAUDE_TIMEOUT}s."
-    except json.JSONDecodeError as e:
-        raw = result.stdout[:500] if result.stdout else ""
-        return f"[bridge] Failed to parse claude output: {e}\nRaw: {raw}"
-    except Exception as e:
-        return f"[bridge] Unexpected error: {e}"
 
 
 # ── HTTP handler ────────────────────────────────────────────────────────────
@@ -188,51 +150,32 @@ class BridgeHandler(BaseHTTPRequestHandler):
         streaming = body.get("stream", False)
         model = body.get("model", "claude-code")
 
-        # Extract system prompt (may be a string or list of content blocks)
         system_raw = body.get("system", "")
         system = _extract_text(system_raw) if isinstance(system_raw, list) else system_raw
-
         messages = body.get("messages", [])
         prompt = format_prompt(system, messages)
 
         print(f"[bridge] Request: model={model} stream={streaming} msgs={len(messages)}", flush=True)
 
-        response_text = call_claude(prompt)
-
-        in_tok = max(1, len(prompt) // 4)
-        out_tok = max(1, len(response_text) // 4)
-
         if streaming:
-            self._send_sse(model, response_text, in_tok, out_tok)
+            self._handle_streaming(prompt, model)
         else:
+            response_text = self._run_claude_sync(prompt)
+            in_tok = max(1, len(prompt) // 4)
+            out_tok = max(1, len(response_text) // 4)
             self._send_json(model, response_text, in_tok, out_tok)
 
-    def _send_json(self, model, text, in_tok, out_tok):
-        resp = {
-            "id": f"msg_bridge_{int(time.time())}",
-            "type": "message",
-            "role": "assistant",
-            "content": [{"type": "text", "text": text}],
-            "model": model,
-            "stop_reason": "end_turn",
-            "stop_sequence": None,
-            "usage": {"input_tokens": in_tok, "output_tokens": out_tok},
-        }
-        body = json.dumps(resp).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    # ── Streaming path ───────────────────────────────────────────────────────
 
-    def _send_sse(self, model, text, in_tok, out_tok):
+    def _handle_streaming(self, prompt, model):
+        in_tok = max(1, len(prompt) // 4)
+        msg_id = f"msg_bridge_{int(time.time())}"
+
+        # Send headers + initial SSE events IMMEDIATELY — prevents client timeout
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
-
-        msg_id = f"msg_bridge_{int(time.time())}"
 
         def emit(event, data):
             line = f"event: {event}\ndata: {json.dumps(data)}\n\n"
@@ -252,6 +195,63 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "type": "content_block_start", "index": 0,
             "content_block": {"type": "text", "text": ""},
         })
+
+        # Launch claude as a non-blocking subprocess
+        cmd = [
+            "claude", "-p", prompt,
+            "--output-format", "json",
+            "--dangerously-skip-permissions",
+            "--allowedTools", CLAUDE_TOOLS,
+            "--max-turns", "20",
+        ]
+        env = _build_env()
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                cwd=os.path.expanduser("~"),
+            )
+        except Exception as e:
+            response_text = f"[bridge] Failed to start claude: {e}"
+            self._emit_content_and_close(emit, response_text, in_tok)
+            return
+
+        # Poll the process, sending SSE pings to keep the connection alive
+        deadline = time.time() + CLAUDE_TIMEOUT
+        while proc.poll() is None:
+            if time.time() > deadline:
+                proc.kill()
+                response_text = f"[bridge] Claude timed out after {CLAUDE_TIMEOUT}s."
+                self._emit_content_and_close(emit, response_text, in_tok)
+                return
+            try:
+                emit("ping", {"type": "ping"})
+            except Exception:
+                # Client disconnected — kill subprocess and bail
+                proc.kill()
+                return
+            time.sleep(PING_INTERVAL)
+
+        stdout, stderr = proc.communicate()
+
+        if proc.returncode == 0:
+            try:
+                out = json.loads(stdout)
+                response_text = out.get("result") or out.get("message") or "(no output)"
+            except json.JSONDecodeError:
+                response_text = stdout.strip() or "(no output)"
+        else:
+            err = (stderr or stdout or "unknown error").strip()
+            response_text = f"[claude error (exit {proc.returncode})] {err}"
+
+        self._emit_content_and_close(emit, response_text, in_tok)
+
+    def _emit_content_and_close(self, emit, text, in_tok):
+        out_tok = max(1, len(text) // 4)
         emit("content_block_delta", {
             "type": "content_block_delta", "index": 0,
             "delta": {"type": "text_delta", "text": text},
@@ -263,6 +263,55 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "usage": {"output_tokens": out_tok},
         })
         emit("message_stop", {"type": "message_stop"})
+
+    # ── Non-streaming path ───────────────────────────────────────────────────
+
+    def _run_claude_sync(self, prompt):
+        cmd = [
+            "claude", "-p", prompt,
+            "--output-format", "json",
+            "--dangerously-skip-permissions",
+            "--allowedTools", CLAUDE_TOOLS,
+            "--max-turns", "20",
+        ]
+        env = _build_env()
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=CLAUDE_TIMEOUT,
+                env=env,
+                cwd=os.path.expanduser("~"),
+            )
+            if result.returncode == 0:
+                out = json.loads(result.stdout)
+                return out.get("result") or out.get("message") or "(no output)"
+            else:
+                err = (result.stderr or result.stdout or "unknown error").strip()
+                return f"[claude error (exit {result.returncode})] {err}"
+        except subprocess.TimeoutExpired:
+            return f"[bridge] Claude timed out after {CLAUDE_TIMEOUT}s."
+        except Exception as e:
+            return f"[bridge] Unexpected error: {e}"
+
+    def _send_json(self, model, text, in_tok, out_tok):
+        resp = {
+            "id": f"msg_bridge_{int(time.time())}",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": text}],
+            "model": model,
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "usage": {"input_tokens": in_tok, "output_tokens": out_tok},
+        }
+        body = json.dumps(resp).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, fmt, *args):
         print(f"[bridge] {fmt % args}", flush=True)
