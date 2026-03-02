@@ -1,44 +1,40 @@
 # openclaw-docker-agent
 
 Self-hosted autonomous AI coding agent powered by [OpenClaw](https://openclaw.ai).
-Controlled from your phone via Telegram. Runs in a single Docker container. No public URL required.
+Controlled from your phone via Telegram. Runs in Docker. No public URL required.
 
 ```
-Telegram app (phone) ↔ Telegram servers ↔ OpenClaw (Docker) → Anthropic Claude API
+Telegram app (phone) ↔ Telegram servers ↔ OpenClaw (Docker) → Ollama (LLM)
 ```
 
 ---
 
 ## Prerequisites
 
-- Linux machine with Docker and Docker Compose installed
+- **Docker Desktop** (Windows/macOS) or **Docker + Docker Compose** (Linux)
 - A Telegram account
-- An [Anthropic API key](https://console.anthropic.com) (Claude)
 - Git
-
-If you need to set up Docker on a fresh Linux machine, run:
-
-```bash
-bash scripts/homeserver/setup.sh
-```
-
-This handles static IP, SSH hardening, firewall, Tailscale, and Docker in one go.
 
 ---
 
-## Quick start
+## Quick start — Windows (WSL2) or Linux
 
-### 1. Clone the repo
+> **Windows users:** All commands run inside a **WSL2 terminal** (Ubuntu or Debian).
+> Install WSL2 first if you haven't: open PowerShell as Admin and run `wsl --install`, then reboot.
+> Install Docker Desktop and enable the WSL2 backend in its settings.
+
+### 1. Install dependencies (WSL2 / Linux only, one time)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/openclaw-docker-agent.git
-cd openclaw-docker-agent
+sudo apt update && sudo apt install -y git make python3
 ```
 
-### 2. Create a Telegram bot
+### 2. Clone the repo
 
-Open Telegram → search for `@BotFather` → send `/newbot` → follow the prompts.
-Copy the bot token (looks like `1234567890:AAH-...`).
+```bash
+git clone https://github.com/leonardobove/openclaw-docker-agent.git
+cd openclaw-docker-agent
+```
 
 ### 3. Generate your `.env`
 
@@ -46,12 +42,15 @@ Copy the bot token (looks like `1234567890:AAH-...`).
 python3 scripts/gen-env.py
 ```
 
-This prompts for your Telegram bot token and Anthropic API key, and writes a clean `.env`.
+This prompts for your Telegram bot token, auto-detects your repo path, and writes a clean `.env`.
+
+> **Need a bot?** Open Telegram → search `@BotFather` → send `/newbot` → follow the prompts → copy the token.
 
 ### 4. Start the agent
 
 ```bash
-make up
+make up          # CPU only
+make gpu-up      # NVIDIA GPU acceleration (see GPU section below)
 ```
 
 ### 5. Pair your Telegram account (one time)
@@ -59,19 +58,14 @@ make up
 1. Open Telegram → find your bot → send `/start`
 2. The bot replies with a pairing code (e.g. `BYGFKLR9`)
 3. Send that code back to the bot
-4. On the server, approve it:
-
-```bash
-docker compose exec openclaw openclaw pairing approve <CODE>
-```
-
-You can list pending requests with:
+4. Approve it on the server:
 
 ```bash
 docker compose exec openclaw openclaw pairing list
+docker compose exec openclaw openclaw pairing approve BYGFKLR9
 ```
 
-That's it — send a message to your bot and Claude responds.
+Send any message to the bot — it should respond.
 
 ---
 
@@ -85,64 +79,58 @@ make logs      # Stream agent logs
 make shell     # Bash shell inside the container
 make status    # Show container and volume status
 make build     # Force rebuild image (no cache)
-make reset     # Wipe agent state volume and restart fresh
+make reset     # Wipe agent state volume and restart fresh (re-pairing required)
 make upgrade   # Upgrade OpenClaw to latest and rebuild
 make clean     # Remove container, image, and volume
 ```
 
 ---
 
-## Switching the LLM
+## GPU acceleration (NVIDIA)
 
-### Switch to Google Gemini (free)
+Run Ollama with your NVIDIA GPU for much faster inference:
 
-Get a free API key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+**Windows (Docker Desktop + WSL2):**
+1. Install the [NVIDIA driver for WSL2](https://docs.nvidia.com/cuda/wsl-user-guide/)
+2. Enable GPU in Docker Desktop → Settings → Resources → GPU
+3. Run: `make gpu-up`
 
-1. Add to `.env`:
-   ```
-   GEMINI_API_KEY=AIzaSy...
-   ```
+**Linux:**
+1. Install [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+2. Run: `make gpu-up`
 
-2. Edit `config/openclaw.json` — replace the `models` block:
-   ```json
-   "models": {
-     "providers": {
-       "google": {
-         "apiKey": "${GEMINI_API_KEY}",
-         "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
-         "models": [
-           { "id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "contextWindow": 1000000, "maxTokens": 8192 },
-           { "id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "contextWindow": 1000000, "maxTokens": 8192 }
-         ]
-       }
-     }
-   },
-   "agents": {
-     "defaults": {
-       "model": {
-         "primary": "google/gemini-2.0-flash",
-         "fallbacks": ["google/gemini-1.5-flash"]
-       }
-     }
-   }
-   ```
+---
 
-3. Rebuild and restart:
-   ```bash
-   make build && docker compose up -d
-   ```
+## Ollama models
 
-4. Verify — check the logs:
-   ```bash
-   make logs | grep "agent model"
-   # Expected: [gateway] agent model: google/gemini-2.0-flash
-   ```
-   Or ask the bot: *"what model are you?"*
+The default model is `qwen2.5-coder:7b`. Pull it on first run:
 
-### Switch back to Anthropic Claude
+```bash
+docker compose exec ollama ollama pull qwen2.5-coder:7b
+```
 
-Default config uses `anthropic/claude-sonnet-4-6`. It's already in `config/openclaw.json`.
-Make sure `ANTHROPIC_API_KEY` is set in `.env`, rebuild if you changed providers.
+Switch the bot brain to a different model (no rebuild needed):
+
+```bash
+docker compose exec ollama ollama pull llama3.2:3b          # pull first
+docker compose exec openclaw openclaw models set ollama/llama3.2:3b
+```
+
+List available models:
+```bash
+docker compose exec ollama ollama list
+```
+
+---
+
+## Moving to a different machine
+
+1. Clone the repo on the new machine
+2. Run `python3 scripts/gen-env.py` — use the **same `TELEGRAM_BOT_TOKEN`** to keep the same bot
+3. Run `make up`
+4. Re-pair your Telegram account (send `/start` → code → approve)
+
+The bot identity is determined by the token — same token, same bot. The pairing step takes ~30 seconds.
 
 ---
 
@@ -151,25 +139,21 @@ Make sure `ANTHROPIC_API_KEY` is set in `.env`, rebuild if you changed providers
 ```
 openclaw-docker-agent/
 ├── config/
-│   ├── openclaw.json          OpenClaw config — model provider, gateway, Telegram channel
+│   ├── openclaw.json          OpenClaw config — Ollama provider, gateway, Telegram channel
 │   └── workspace/
 │       ├── AGENTS.md          Agent behaviour instructions (seeded into agent workspace)
 │       └── SOUL.md            Agent persona
 ├── scripts/
-│   ├── entrypoint.sh          Container init — seeds config on first run, starts gateway
+│   ├── entrypoint.sh          Container init — seeds config, starts agent-manager + gateway
+│   ├── agent-manager.py       Background agent spawner (port 3004)
 │   ├── gen-env.py             Interactive .env generator
-│   ├── setup-claude.sh        Install Claude Code CLI and open a session in this repo
 │   └── homeserver/            Linux home server one-time setup scripts
-│       ├── setup.sh           Master script — runs all steps below
-│       ├── 01-static-ip.sh    Assign static LAN IP via netplan
-│       ├── 02-ssh-hardening.sh  Key-only SSH + fail2ban
-│       ├── 03-firewall.sh     ufw rules
-│       └── 04-tailscale.sh    Tailscale for remote SSH
-├── docker-compose.yml         Single-container stack
-├── Dockerfile                 OpenClaw agent image (node:22-slim)
+├── docker-compose.yml         Stack definition (openclaw-agent + ollama)
+├── docker-compose.gpu.yml     GPU override for Ollama (NVIDIA)
+├── Dockerfile                 Agent image (node:22-slim)
 ├── Makefile                   All operational commands
 ├── .env.example               Environment variable template
-└── .gitignore
+└── CLAUDE.md                  Full technical context (auto-loaded by Claude Code)
 ```
 
 ---
@@ -181,10 +165,10 @@ openclaw-docker-agent/
 | `OPENCLAW_VERSION` | No | npm version — `latest` or pin e.g. `2026.2.26` |
 | `OPENCLAW_GATEWAY_TOKEN` | Yes | ≥32 char secret. Generate: `openssl rand -hex 32` |
 | `TELEGRAM_BOT_TOKEN` | Yes | From `@BotFather` |
-| `ANTHROPIC_API_KEY` | Yes* | From [console.anthropic.com](https://console.anthropic.com) |
-| `GEMINI_API_KEY` | Yes* | From [aistudio.google.com](https://aistudio.google.com/apikey) — free |
-
-*One LLM API key required (Anthropic or Google).
+| `REPO_HOST_PATH` | Yes | Absolute path to this repo on the host (e.g. `/home/user/openclaw-docker-agent`) |
+| `DOCKER_GID` | No | Docker group GID (default 999). Find yours: `getent group docker \| cut -d: -f3` |
+| `OLLAMA_MODEL` | No | Default Ollama model for coding agents (default: `qwen2.5-coder:7b`) |
+| `ANTHROPIC_API_KEY` | No | Only needed for Claude Pro coding agents |
 
 ---
 
@@ -193,11 +177,10 @@ openclaw-docker-agent/
 | Control | Implementation |
 |---|---|
 | Non-root container | UID 10001, `cap_drop: ALL` |
-| No host filesystem | Named Docker volume only |
-| No Docker socket | Never mounted |
-| No ports exposed | Gateway on loopback only — Telegram polls outbound |
+| Repo bind-mount | Read/write access to repo only |
 | Telegram auth | `dmPolicy: pairing` — explicit admin approval per user |
-| Resource limits | 2 CPU / 2 GB RAM max |
+| No ports exposed | Gateway on loopback only — Telegram polls outbound |
+| Resource limits | 4 CPU / 4 GB RAM max |
 
 ---
 

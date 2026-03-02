@@ -3,7 +3,11 @@
 #
 # Services: openclaw-agent, ollama
 # Access: Telegram bot (dmPolicy=pairing — send /start to pair)
-# LLM: Anthropic Claude Sonnet 4.6 (default) | Gemini | Claude Code | Ollama | Groq
+# LLM: Ollama (qwen2.5-coder:7b default) | switchable at runtime via Telegram
+#
+# GPU: to enable GPU acceleration for Ollama, use the override file:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#   or: make gpu-up
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -46,24 +50,21 @@ services:
       OPENCLAW_STATE_DIR:     /home/openclaw/.openclaw
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
       NODE_ENV:               production
-      # Host path to this repo — needed so docker compose commands resolve paths correctly
-      REPO_HOST_PATH:         /home/leonardo/openclaw-docker-agent
-      # Ollama config — override OLLAMA_MODEL to change the local model
+      # Host path to this repo — set in .env, used by the agent for docker compose commands
+      REPO_HOST_PATH:         ${REPO_HOST_PATH:?Set REPO_HOST_PATH in .env (absolute path to this repo on the host)}
+      # Ollama config — OLLAMA_MODEL sets default model for coding agents
       OLLAMA_HOST:            http://ollama:11434
       OLLAMA_MODEL:           ${OLLAMA_MODEL:-qwen2.5-coder:7b}
-      # Groq config — cloud-hosted QwQ-32B reasoning model
-      GROQ_API_KEY:           ${GROQ_API_KEY}
-      GROQ_MODEL:             ${GROQ_MODEL:-qwen/qwen3-32b}
 
     volumes:
       - openclaw-state:/home/openclaw/.openclaw
-      - /home/leonardo/openclaw-docker-agent:/home/openclaw/repo
+      - .:/home/openclaw/repo                      # relative — works on any machine
       - /var/run/docker.sock:/var/run/docker.sock
 
     # ── Security hardening ─────────────────────────────────────────────────
     user: "10001:10001"
     group_add:
-      - "999"     # docker group (GID 999) — allows access to /var/run/docker.sock
+      - "${DOCKER_GID:-999}"   # docker group GID — set DOCKER_GID in .env if not 999
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -72,8 +73,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus:   "2.0"
-          memory: 2048M
+          cpus:   "4.0"
+          memory: 4096M
         reservations:
           cpus:   "0.25"
           memory: 256M

@@ -62,11 +62,8 @@ COPY --chown=openclaw:openclaw config/openclaw.json       /etc/openclaw/openclaw
 COPY --chown=openclaw:openclaw config/workspace/AGENTS.md /etc/openclaw/workspace/AGENTS.md
 COPY --chown=openclaw:openclaw config/workspace/SOUL.md   /etc/openclaw/workspace/SOUL.md
 COPY                           scripts/entrypoint.sh      /usr/local/bin/entrypoint.sh
-COPY                           scripts/claude-bridge.py   /usr/local/bin/claude-bridge.py
-COPY                           scripts/ollama-bridge.py   /usr/local/bin/ollama-bridge.py
-COPY                           scripts/groq-bridge.py     /usr/local/bin/groq-bridge.py
 COPY                           scripts/agent-manager.py   /usr/local/bin/agent-manager.py
-RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/claude-bridge.py /usr/local/bin/ollama-bridge.py /usr/local/bin/groq-bridge.py /usr/local/bin/agent-manager.py
+RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/agent-manager.py
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 USER openclaw

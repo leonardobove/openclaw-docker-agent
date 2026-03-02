@@ -14,46 +14,61 @@ Controlled via Telegram. No public URL. No reverse proxy. Single container.
 Telegram app (phone)
        ↕  (HTTPS, Telegram's servers — bot polls outbound)
 OpenClaw agent (Docker container, port 18789 on loopback only)
-       ↓  (HTTPS, or via local bridge)
-Anthropic Claude API  /  Google Gemini API  /  Claude Code CLI (local bridge on :3001)  /  Groq Cloud API (local bridge on :3003)
+       ↓  (HTTP, Anthropic-compatible /v1/messages)
+Ollama (Docker sidecar, port 11434)
+       ├── kimi-k2.5:cloud  (default — cloud, no extra API key)
+       └── <any ollama model>  (local or cloud, switchable at runtime)
+
+Coding Agents (agent-manager.py, port 3004):
+   ├── Ollama backend:   claude -p --model <model>
+   │                     env: ANTHROPIC_BASE_URL=http://ollama:11434
+   │                          ANTHROPIC_AUTH_TOKEN=ollama
+   └── Claude Pro backend: claude -p  (real Anthropic API via OAuth credentials)
 ```
 
 **Stack:**
 - **OpenClaw** — Node.js AI agent framework (npm package `openclaw`), gateway on `ws://127.0.0.1:18789`
 - **Telegram** — smartphone interface via outbound long-polling (no webhook, no exposed ports)
-- **LLM** — Five switchable brains (no rebuild needed):
-  - `anthropic/claude-sonnet-4-6` — default, direct API
-  - `google/gemini-2.0-flash` — free tier
-  - `claude-code/claude-code` — Claude Code CLI via local HTTP bridge (`scripts/claude-bridge.py`)
-  - `ollama/qwen2.5-coder:7b` — local coding model via Ollama sidecar (`scripts/ollama-bridge.py`)
-  - `groq/qwen-qwq-32b` — Groq Cloud QwQ-32B reasoning model via local HTTP bridge (`scripts/groq-bridge.py`)
-- **Claude Code bridge** — Python HTTP server on `localhost:3001`; translates Anthropic Messages
-  API calls into `claude -p` subprocess invocations; manages OAuth token refresh automatically
-- **Ollama bridge** — Python HTTP server on `localhost:3002`; translates Anthropic Messages API
-  calls into Ollama `/api/chat` requests; Ollama runs as a Docker sidecar service
-- **Groq bridge** — Python HTTP server on `localhost:3003`; translates Anthropic Messages API
-  calls into Groq's OpenAI-compatible `/openai/v1/chat/completions` endpoint; requires `GROQ_API_KEY`
+- **LLM** — Ollama with Anthropic-compatible `/v1/messages` API; models switchable at runtime:
+  - `kimi-k2.5:cloud` — default (cloud model, no download needed)
+  - `glm-5:cloud` — alternative cloud model
+  - `qwen3:30b-a3b` — local model (must pull first)
+  - `qwen2.5-coder:7b` — local coding model (must pull first)
+- **Ollama** — Docker sidecar; serves Anthropic-compatible API at `http://ollama:11434/v1/messages`
+  OpenClaw connects directly — no bridge process needed (Ollama ≥ 0.6)
+- **Claude Code CLI** — used only for spawning coding agents (`agent-manager.py`)
+  - Ollama backend: `ANTHROPIC_BASE_URL=http://ollama:11434` overrides the API endpoint
+  - Claude Pro backend: uses OAuth credentials from `~/.claude/.credentials.json`
 
 ---
 
 ## Deployment Machine
 
-- **OS:** Linux home server behind NAT router (not a VPS)
-- **User:** `leonardo`
-- **Repo:** `/home/leonardo/openclaw-docker-agent`
+Runs on **any machine with Docker** — Linux, Windows (WSL2), or macOS.
+The containers are Linux regardless of the host OS.
+
+**Current host:**
+- **OS:** Linux home server (or Windows with WSL2)
+- **Repo:** path set in `.env` as `REPO_HOST_PATH`
 - **Git remote:** `git@github.com:leonardobove/openclaw-docker-agent.git`
 - **Docker:** running, managed via `docker compose`
+
+**Windows/WSL2 setup (one time):**
+1. `wsl --install` in PowerShell (Admin) → reboot
+2. Install Docker Desktop → enable WSL2 backend in settings
+3. Open WSL2 terminal: `sudo apt install -y git make python3`
+4. `git clone https://github.com/leonardobove/openclaw-docker-agent.git`
+5. `cd openclaw-docker-agent && python3 scripts/gen-env.py && make up`
 
 ---
 
 ## Current Status
 
-Stack is UP. Single container `openclaw-agent` is healthy.
+Stack is UP. Two containers: `openclaw-agent` + `ollama` sidecar.
 
 - Telegram bot: `@openclaw_docker_agent_bot` — connected, user `leobove` is paired
-- Active model: `anthropic/claude-sonnet-4-6`
-- Five providers configured: anthropic, google, claude-code, ollama, groq — switch without rebuild
-- Claude Code bridge: running on `localhost:3001` inside the container
+- Active brain model: `ollama/kimi-k2.5:cloud`
+- Coding agents: `ollama` backend (default), `claude-pro` backend available with OAuth creds
 
 ---
 
@@ -67,10 +82,8 @@ openclaw-docker-agent/
 │       ├── AGENTS.md          Agent behaviour instructions (seeded into workspace)
 │       └── SOUL.md            Agent persona
 ├── scripts/
-│   ├── entrypoint.sh          Container init: seeds config on first run, starts bridges + gateway
-│   ├── claude-bridge.py       Local HTTP bridge: OpenClaw → Claude Code CLI (port 3001)
-│   ├── ollama-bridge.py       Local HTTP bridge: OpenClaw → Ollama API (port 3002)
-│   ├── groq-bridge.py         Local HTTP bridge: OpenClaw → Groq Cloud API (port 3003)
+│   ├── entrypoint.sh          Container init: seeds config on first run, starts agent-manager + gateway
+│   ├── agent-manager.py       Background agent spawner on port 3004; supports ollama/claude-pro backends
 │   ├── gen-env.py             Interactive .env generator (always use this, not heredoc)
 │   ├── setup-claude.sh        Installs Claude Code CLI and opens a session in this repo
 │   └── homeserver/            One-time Linux server setup scripts
@@ -79,8 +92,8 @@ openclaw-docker-agent/
 │       ├── 02-ssh-hardening.sh  Key-only SSH + fail2ban
 │       ├── 03-firewall.sh     ufw rules
 │       └── 04-tailscale.sh    Tailscale for remote SSH
-├── docker-compose.yml         Single-service stack definition
-├── Dockerfile                 Image: node:22-slim + openclaw npm + non-root user
+├── docker-compose.yml         Two-service stack: openclaw-agent + ollama sidecar
+├── Dockerfile                 Image: node:22-slim + openclaw npm + claude-code npm + non-root user
 ├── Makefile                   All operational commands
 ├── .env                       Secrets — gitignored, never commit
 ├── .env.example               Template for .env
@@ -112,19 +125,28 @@ docker compose exec openclaw openclaw pairing approve <CODE>
 
 # Model switching (no rebuild needed)
 docker compose exec openclaw openclaw models list
-docker compose exec openclaw openclaw models set google/gemini-2.0-flash
-docker compose exec openclaw openclaw models set anthropic/claude-sonnet-4-6
-docker compose exec openclaw openclaw models set anthropic/claude-haiku-4-5-20251001
-docker compose exec openclaw openclaw models set claude-code/claude-code
+docker compose exec openclaw openclaw models set ollama/kimi-k2.5:cloud
+docker compose exec openclaw openclaw models set ollama/glm-5:cloud
+docker compose exec openclaw openclaw models set ollama/qwen3:30b-a3b
 docker compose exec openclaw openclaw models set ollama/qwen2.5-coder:7b
-docker compose exec openclaw openclaw models set groq/qwen-qwq-32b
 
 # Ollama model management
-docker compose exec ollama ollama pull qwen2.5-coder:7b   # pull default model (required on first use)
-docker compose exec ollama ollama pull <model>             # pull any other Ollama model
-docker compose exec ollama ollama list                     # list downloaded models
+docker compose exec ollama ollama list                      # list downloaded models
+docker compose exec ollama ollama pull qwen2.5-coder:7b    # pull a local model
+docker compose exec ollama ollama pull <model>             # pull any Ollama model
+docker compose exec ollama ollama --version                # check Ollama version
 
-# Claude Code OAuth credential injection (run on your LOCAL machine, then paste to Telegram)
+# Coding agent backend (agent-manager on port 3004)
+# Switch to Ollama backend (default)
+curl -s -X POST http://localhost:3004/backend \
+  -H "Content-Type: application/json" \
+  -d '{"backend": "ollama", "model": "kimi-k2.5:cloud"}'
+# Switch to Claude Pro backend
+curl -s -X POST http://localhost:3004/backend \
+  -H "Content-Type: application/json" \
+  -d '{"backend": "claude-pro"}'
+
+# Claude Code OAuth credential injection (run on LOCAL machine, paste blob to Telegram)
 cat ~/.claude/.credentials.json | base64 -w0   # Linux
 cat ~/.claude/.credentials.json | base64        # macOS
 ```
@@ -137,10 +159,12 @@ cat ~/.claude/.credentials.json | base64        # macOS
 OPENCLAW_VERSION=latest                  # npm package version, pin or use latest
 OPENCLAW_GATEWAY_TOKEN=<64 hex chars>    # openssl rand -hex 32
 TELEGRAM_BOT_TOKEN=<from @BotFather>
-ANTHROPIC_API_KEY=<from console.anthropic.com>
-GEMINI_API_KEY=<from aistudio.google.com/apikey>   # free tier available
-GROQ_API_KEY=<from console.groq.com>               # optional; needed only for groq/qwen-qwq-32b
-GROQ_MODEL=qwen-qwq-32b                            # optional; override to use a different Groq model
+REPO_HOST_PATH=<absolute path to repo>   # e.g. /home/leonardo/openclaw-docker-agent
+                                         # on WSL2: Linux path inside WSL2
+DOCKER_GID=999                           # docker group GID; getent group docker | cut -d: -f3
+OLLAMA_MODEL=qwen2.5-coder:7b            # default model for coding agents
+# ANTHROPIC_API_KEY=<optional>          # only needed for Claude Pro agents (API key auth)
+                                         # prefer OAuth credential injection via Telegram
 ```
 
 Generate with: `python3 scripts/gen-env.py`
@@ -154,15 +178,20 @@ Generate with: `python3 scripts/gen-env.py`
 This is the **source of truth** for the agent config. It lives in the repo and is baked into
 the Docker image at `/etc/openclaw/openclaw.json`.
 
+The Ollama provider uses `"api": "anthropic-messages"` and points directly to
+`http://ollama:11434` — no bridge process is needed (Ollama ≥ 0.6 serves `/v1/messages`).
+
 On **first container start**, `scripts/entrypoint.sh` copies it to the state volume at
 `/home/openclaw/.openclaw/openclaw.json`. On subsequent starts the entrypoint skips this copy
 (state already exists), but OpenClaw's gateway may auto-overwrite it if the image config differs.
 
-**If a config change isn't being picked up**, force-copy and restart:
+**If a config change isn't being picked up**, force-copy from the repo bind-mount and restart:
 ```bash
-docker compose exec openclaw cp /etc/openclaw/openclaw.json /home/openclaw/.openclaw/openclaw.json
+docker compose exec openclaw cp /home/openclaw/repo/config/openclaw.json /home/openclaw/.openclaw/openclaw.json
 docker compose restart openclaw
 ```
+Note: `/etc/openclaw/openclaw.json` is baked into the image at build time — use the repo path above
+to pick up edits without rebuilding.
 
 Or wipe the state entirely for a clean slate:
 ```bash
@@ -180,6 +209,9 @@ Key paths inside the volume:
 - `credentials/telegram-default-allowFrom.json` — list of paired Telegram user IDs
 - `credentials/telegram-pairing.json` — pending pairing requests
 - `telegram/update-offset-default.json` — Telegram polling offset (don't delete while running)
+- `claude-creds/` — Claude Code OAuth credentials (symlinked to `~/.claude/`)
+- `agent-backend` — default coding agent backend (`ollama` or `claude-pro`)
+- `agent-model` — default coding agent Ollama model
 
 ---
 
@@ -204,44 +236,68 @@ Paired user IDs are stored in:
 
 ## Switching LLMs
 
-All providers are pre-configured. Switch at any time **without rebuilding**:
+All Ollama models are pre-configured. Switch at any time **without rebuilding**:
 
 ```bash
-# Switch to Gemini (free)
-docker compose exec openclaw openclaw models set google/gemini-2.0-flash
+# Switch to GLM-5 (cloud)
+docker compose exec openclaw openclaw models set ollama/glm-5:cloud
 
-# Switch back to Claude (default)
-docker compose exec openclaw openclaw models set anthropic/claude-sonnet-4-6
+# Switch back to default (Kimi K2.5 cloud)
+docker compose exec openclaw openclaw models set ollama/kimi-k2.5:cloud
 
-# Cheaper/faster Claude
-docker compose exec openclaw openclaw models set anthropic/claude-haiku-4-5-20251001
-
-# Switch to local Ollama model (pull first if not already downloaded)
+# Switch to a local model (pull it first if not already downloaded)
 docker compose exec ollama ollama pull qwen2.5-coder:7b
 docker compose exec openclaw openclaw models set ollama/qwen2.5-coder:7b
-
-# Switch to Groq Cloud QwQ-32B reasoning model (requires GROQ_API_KEY in .env)
-docker compose exec openclaw openclaw models set groq/qwen-qwq-32b
 ```
 
-Or ask the bot directly: *"switch to Gemini 2.0 Flash"*, *"switch to Ollama"*, *"switch to Groq"*
+Or ask the bot directly: *"switch to GLM-5"*, *"switch to Qwen2.5 Coder"*, etc.
 
-**Ollama model selection:** `qwen2.5-coder:7b` is the default local model — a top-tier open-source
-coding model optimised for code generation, debugging, and explanation. To use a different model:
-1. Edit `.env` and add `OLLAMA_MODEL=<model-name>` (e.g. `devstral` for a larger agentic coder)
-2. Pull the model: `docker compose exec ollama ollama pull <model-name>`
-3. Restart: `make restart`
+**Adding a new model:** add an entry to the `models` array in `config/openclaw.json`,
+then rebuild (`make up`) and force-copy the config if needed.
 
-**Groq model selection:** `qwen-qwq-32b` is the default Groq model — a 32B parameter reasoning
-model hosted on Groq Cloud with a 128K context window, fast inference, and strong coding ability.
-To use a different Groq-hosted model:
-1. Edit `.env` and set `GROQ_MODEL=<model-id>` (check available models at console.groq.com)
-2. Update `config/openclaw.json` to add the new model under the `groq` provider
-3. Restart: `make restart`
+**Cloud vs local models:**
+- Cloud models (e.g. `kimi-k2.5:cloud`, `glm-5:cloud`): served by Ollama's cloud
+  infrastructure. Ollama container must reach `ollama.com`. No extra API key needed.
+- Local models (e.g. `qwen2.5-coder:7b`): pulled to the `ollama-data` volume. Require
+  disk space but work fully offline.
 
 `models set` updates `/home/openclaw/.openclaw/agents/main/agent/models.json` live — no restart needed.
 
 **Verify:** `make logs | grep "agent model"` or ask the bot what model it's using.
+
+---
+
+## Coding Agents — agent-manager (port 3004)
+
+The agent manager runs `claude -p` in the background and sends real-time Telegram updates.
+
+Two backends:
+
+### Ollama backend (default)
+Sets `ANTHROPIC_BASE_URL=http://ollama:11434` and `ANTHROPIC_AUTH_TOKEN=ollama`.
+The Claude CLI sends requests to Ollama instead of Anthropic.
+
+### Claude Pro backend
+Uses OAuth credentials from `~/.claude/.credentials.json`.
+Sets `CLAUDE_CODE_OAUTH_TOKEN` from the credentials file.
+Talks to the real Anthropic API.
+
+**Inject Claude Pro credentials:**
+```bash
+# On local machine (where you're logged into Claude Code):
+cat ~/.claude/.credentials.json | base64 -w0    # Linux
+cat ~/.claude/.credentials.json | base64         # macOS
+# Paste the output to the Telegram bot
+```
+The bot writes the credentials to `~/.claude/.credentials.json` in the container (symlinked
+to the state volume — persists across rebuilds, lost only on `make reset`/`make clean`).
+
+**agent-manager endpoints:**
+- `POST /spawn` — `{"task": "...", "backend": "ollama|claude-pro", "model": "..."}`
+- `GET /status` — list jobs + current default backend/model
+- `DELETE /agent/<id>` — cancel a running job
+- `POST /logging` — `{"enabled": true/false}` — toggle tool-call updates in Telegram
+- `POST /backend` — `{"backend": "ollama|claude-pro", "model": "..."}` — set default
 
 ---
 
@@ -261,11 +317,6 @@ docker compose -f "$REPO_HOST_PATH/docker-compose.yml" up -d --build
 
 ⚠️ Running this kills the current container (and the active agent session). Always warn the
 user before triggering a rebuild.
-
-**To install a new system package:**
-1. Edit `/home/openclaw/repo/Dockerfile` — add to the apt-get install list
-2. Commit: `git -C /home/openclaw/repo commit -am "Add <pkg> to Dockerfile"`
-3. Warn the user, then rebuild
 
 **Docker group:** container user (UID 10001) is in group `docker-host` (GID 999 = host docker group).
 If deploying to a new machine where the docker group has a different GID, update the GID in
@@ -316,7 +367,7 @@ docker compose up -d --build
 3. **`ModelProviderSchema`** — requires BOTH `baseUrl` (non-empty string) AND `models` (array)
    for every provider entry. Missing either causes a Zod validation error at startup.
 
-4. **Anthropic provider** — needs `"api": "anthropic-messages"` set on the provider object AND
+4. **Ollama provider** — needs `"api": "anthropic-messages"` set on the provider object AND
    on each individual model entry. Omitting it causes silent model failures.
 
 5. **`openclaw gateway start`** — daemonizes and exits immediately. Wrong for Docker.
@@ -342,16 +393,26 @@ docker compose up -d --build
     `/etc/openclaw/` to the state volume when `openclaw.json` does not already exist.
     Subsequent container starts skip this entirely.
 
+13. **Ollama version** — Ollama ≥ 0.6 is required for the Anthropic-compatible `/v1/messages`
+    endpoint. If the `ollama/ollama:latest` image is older, the bot will fail to get responses.
+    Verify with: `docker compose exec ollama ollama --version`
+
+14. **Cloud model availability** — `kimi-k2.5:cloud` and `glm-5:cloud` require the Ollama
+    container to reach `ollama.com`. Check connectivity if these models fail.
+
 ---
 
 ## Architecture Decisions
 
 - **Telegram over web UI**: works behind NAT with no port forwarding, no public URL,
   persistent pairing, accessible from any phone worldwide.
-- **Single container**: removed Caddy and cloudflared (3-container stack). No reverse proxy
-  needed since there's no web UI to serve.
-- **Both LLM providers pre-configured**: Anthropic (paid, strong) + Google (free, 1M context).
-  Switch at runtime with `openclaw models set` — no image rebuild required.
+- **Single brain provider (Ollama)**: removed Anthropic, Gemini, Groq providers. Ollama
+  serves an Anthropic-compatible API at `/v1/messages` — no bridge process needed.
+  Cloud models (kimi-k2.5:cloud, glm-5:cloud) require no extra API key.
+- **No LLM bridges**: removed `claude-bridge.py`, `ollama-bridge.py`, `groq-bridge.py`.
+  Simpler stack, fewer processes, no bridge failures.
+- **Dual coding agent backends**: agent-manager supports Ollama (via `ANTHROPIC_BASE_URL`
+  override) and Claude Pro (via OAuth credentials) — switch at runtime without rebuild.
 - **State volume**: named volume `openclaw-state` persists everything across restarts.
   Delete with `docker compose down -v` to start completely fresh (re-pairing required).
 - **Loopback-only gateway**: port 18789 is not published to the host. Telegram uses

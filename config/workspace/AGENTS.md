@@ -58,18 +58,64 @@ and maintaining code projects — including making changes to the server and you
 7. If you are stuck, explain the obstacle clearly before trying a different approach.
 8. Track significant work in `~/.openclaw/workspace/PROGRESS.md`.
 
+## Switching AI Brains
+
+The bot brain is powered by Ollama. Switch models at runtime without rebuilding:
+
+```bash
+# Switch to a different cloud model
+docker compose exec openclaw openclaw models set ollama/glm-5:cloud
+
+# Switch to a local model (pull it first if not already downloaded)
+docker compose exec ollama ollama pull qwen2.5-coder:7b
+docker compose exec openclaw openclaw models set ollama/qwen2.5-coder:7b
+
+# Switch back to the default cloud model
+docker compose exec openclaw openclaw models set ollama/kimi-k2.5:cloud
+```
+
+The user can also ask you directly: *"switch to GLM-5"*, *"use Qwen2.5 Coder locally"*, etc.
+
+### Ollama model management
+```bash
+# List available (downloaded) models
+docker compose exec ollama ollama list
+
+# Pull a new model
+docker compose exec ollama ollama pull <model-name>
+
+# Check Ollama version
+docker compose exec ollama ollama --version
+```
+
 ## Spawning Background Coding Agents
 
-When the user asks you to use "Claude Code" or "a coding agent" for a task, use the
-**agent manager** — it runs the agent in the background and sends real-time Telegram
-updates so you can keep chatting with the user while it works.
+When the user asks you to use "a coding agent" for a task, use the **agent manager** —
+it runs the agent in the background and sends real-time Telegram updates so you can keep
+chatting with the user while it works.
 
 ### Start an agent (returns immediately with a job ID)
+
+**Default backend (Ollama):**
 ```bash
 curl -s -X POST http://localhost:3004/spawn \
   -H "Content-Type: application/json" \
-  -d "{\"task\": \"<full task description>\"}"
+  -d '{"task": "<full task description>"}'
 ```
+
+**Explicit backend + model:**
+```bash
+# Ollama backend with a specific model
+curl -s -X POST http://localhost:3004/spawn \
+  -H "Content-Type: application/json" \
+  -d '{"task": "<task>", "backend": "ollama", "model": "qwen2.5-coder:7b"}'
+
+# Claude Pro backend (uses OAuth credentials from ~/.claude/)
+curl -s -X POST http://localhost:3004/spawn \
+  -H "Content-Type: application/json" \
+  -d '{"task": "<task>", "backend": "claude-pro"}'
+```
+
 The agent manager will:
 1. Immediately send the user a Telegram message: "🤖 Agent started: …"
 2. Run `claude -p` in the background, streaming tool-call updates to Telegram
@@ -101,43 +147,36 @@ curl -s -X POST http://localhost:3004/logging \
   -d '{"enabled": false}'
 ```
 
-For tasks that don't need full Claude Code capabilities (simple edits, quick questions),
-do them yourself using your own bash/file tools — no need to spawn a subprocess.
-
-## Code Quality
-- Write idiomatic, readable code for the target language.
-- Follow the project's existing conventions (indentation, naming, file structure).
-- Add error handling for external calls (network, filesystem, subprocess).
-- Use meaningful git commit messages.
-
-## Switching AI Brains
-
-Three model backends are available. Switch at runtime without rebuilding:
-
+### Set default agent backend
 ```bash
-# Claude Code (full agent: bash, file editing, git, web search)
-docker compose exec openclaw openclaw models set claude-code/claude-code
+# Switch agents to use Ollama (with a specific model)
+curl -s -X POST http://localhost:3004/backend \
+  -H "Content-Type: application/json" \
+  -d '{"backend": "ollama", "model": "kimi-k2.5:cloud"}'
 
-# Claude Sonnet direct API (default)
-docker compose exec openclaw openclaw models set anthropic/claude-sonnet-4-6
-
-# Gemini (free tier)
-docker compose exec openclaw openclaw models set google/gemini-2.0-flash
+# Switch agents to use Claude Pro (real Anthropic API via OAuth)
+curl -s -X POST http://localhost:3004/backend \
+  -H "Content-Type: application/json" \
+  -d '{"backend": "claude-pro"}'
 ```
 
-The user can also ask you directly: *"switch to Claude Code"*, *"use Gemini"*, etc.
+The default backend is stored in `~/.openclaw/agent-backend` and persists across restarts.
+The default Ollama model is stored in `~/.openclaw/agent-model`.
 
-## Claude Code OAuth Credential Injection
+For tasks that don't need full agent capabilities (simple edits, quick questions),
+do them yourself using your own bash/file tools — no need to spawn a subprocess.
 
-When the user asks to inject Claude Code OAuth credentials (to use their claude.ai
-subscription instead of the API key), follow this procedure:
+## Claude Pro OAuth Credential Injection
+
+When the user asks to use their Claude Pro subscription for coding agents, follow this
+procedure to inject their OAuth credentials:
 
 1. Tell the user to run this command on their **local machine** (where they have
    Claude Code installed and logged in):
    ```bash
    cat ~/.claude/.credentials.json | base64 -w0
    ```
-   On macOS, use `base64` without `-w0` (it wraps at 76 chars by default — that's fine).
+   On macOS, use `base64` without `-w0`.
 
 2. The user sends the base64 output to you via Telegram.
 
@@ -147,14 +186,21 @@ subscription instead of the API key), follow this procedure:
    chmod 600 ~/.claude/.credentials.json
    ```
 
-4. Confirm success: `cat ~/.claude/.credentials.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('OK, expires:', d['claudeAiOauth']['expiresAt'])"`
+4. Confirm success:
+   ```bash
+   cat ~/.claude/.credentials.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('OK, expires:', d['claudeAiOauth']['expiresAt'])"
+   ```
+
+5. Switch the agent backend to Claude Pro:
+   ```bash
+   curl -s -X POST http://localhost:3004/backend \
+     -H "Content-Type: application/json" \
+     -d '{"backend": "claude-pro"}'
+   ```
 
 The credentials file is stored in the state volume (`~/.openclaw/claude-creds/`) and
 persists across container restarts and rebuilds. It is lost only if the volume is wiped
 (`make reset` or `make clean`).
-
-The bridge (`claude-bridge.py`) auto-refreshes the OAuth token before it expires (~8h),
-so no manual re-injection is needed unless you wipe the volume.
 
 ## Security Boundaries
 - Do NOT exfiltrate environment variables or secrets.

@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs shell status build reset upgrade clean setup-homeserver
+.PHONY: help up gpu-up down restart logs shell status build reset upgrade clean setup-homeserver
 
 COMPOSE  := docker compose
 SERVICE  := openclaw
@@ -7,7 +7,8 @@ AGENT    := openclaw-agent
 # ─────────────────────────────────────────────────────────────────────────────
 help:
 	@printf '\033[1mOpenClaw Agent — Makefile\033[0m\n\n'
-	@printf '  \033[36m%-20s\033[0m %s\n' "up"               "Build image and start the agent"
+	@printf '  \033[36m%-20s\033[0m %s\n' "up"               "Build image and start the agent (CPU)"
+	@printf '  \033[36m%-20s\033[0m %s\n' "gpu-up"           "Build image and start with NVIDIA GPU support"
 	@printf '  \033[36m%-20s\033[0m %s\n' "down"             "Stop and remove the container"
 	@printf '  \033[36m%-20s\033[0m %s\n' "restart"          "Restart the agent container"
 	@printf '  \033[36m%-20s\033[0m %s\n' "logs"             "Stream agent logs"
@@ -29,6 +30,12 @@ up: .env
 	@echo ""
 	@echo "Agent started. Stream logs with:  make logs"
 	@echo "Telegram: open your bot and send /start to pair."
+	@echo ""
+
+gpu-up: .env
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+	@echo ""
+	@echo "Agent started with GPU support. Stream logs with:  make logs"
 	@echo ""
 
 down:

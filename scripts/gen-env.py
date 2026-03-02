@@ -8,7 +8,8 @@ Run from the repo root:
 What it does:
   - Generates a random 64-hex-char OPENCLAW_GATEWAY_TOKEN
   - Prompts for TELEGRAM_BOT_TOKEN (from @BotFather)
-  - Prompts for ANTHROPIC_API_KEY (from console.anthropic.com)
+  - Auto-detects REPO_HOST_PATH (asks to confirm)
+  - Optionally prompts for ANTHROPIC_API_KEY (for Claude Pro agents)
   - Writes a clean .env with no trailing whitespace or encoding issues
 """
 
@@ -16,10 +17,13 @@ import subprocess
 import sys
 import os
 
-ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENV_FILE  = os.path.join(REPO_ROOT, ".env")
 
 DEFAULTS = {
     "OPENCLAW_VERSION": "latest",
+    "OLLAMA_MODEL":     "qwen2.5-coder:7b",
+    "DOCKER_GID":       "999",
 }
 
 
@@ -34,6 +38,17 @@ def run(cmd, description):
     except FileNotFoundError:
         print(f"ERROR: command not found: {cmd[0]}")
         sys.exit(1)
+
+
+def detect_docker_gid():
+    """Try to detect the docker group GID on the current system."""
+    try:
+        out = subprocess.check_output(
+            ["getent", "group", "docker"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+        return out.split(":")[2]
+    except Exception:
+        return DEFAULTS["DOCKER_GID"]
 
 
 def main():
@@ -53,28 +68,43 @@ def main():
         print("ERROR: TELEGRAM_BOT_TOKEN cannot be empty.")
         sys.exit(1)
 
-    # Anthropic API key
+    # REPO_HOST_PATH — auto-detect, let user confirm or override
     print()
-    print("Get an API key from https://console.anthropic.com")
-    anthropic_key = input("Paste your ANTHROPIC_API_KEY: ").strip()
-    if not anthropic_key:
-        print("ERROR: ANTHROPIC_API_KEY cannot be empty.")
-        sys.exit(1)
+    detected_path = REPO_ROOT
+    print(f"Detected repo path: {detected_path}")
+    print("This is the absolute host path Docker uses to find the repo.")
+    print("On WSL2: use the Linux path (e.g. /home/youruser/openclaw-docker-agent)")
+    repo_path = input(f"REPO_HOST_PATH [{detected_path}]: ").strip()
+    if not repo_path:
+        repo_path = detected_path
 
-    # Gemini API key (optional)
+    # Docker GID
     print()
-    print("Get a free API key from https://aistudio.google.com/apikey")
-    gemini_key = input("Paste your GEMINI_API_KEY (or press Enter to skip): ").strip()
+    detected_gid = detect_docker_gid()
+    print(f"Detected docker group GID: {detected_gid}")
+    print("(On Docker Desktop for Windows/macOS, 999 usually works fine)")
+    docker_gid = input(f"DOCKER_GID [{detected_gid}]: ").strip()
+    if not docker_gid:
+        docker_gid = detected_gid
+
+    # Anthropic API key (optional — for Claude Pro coding agents)
+    print()
+    print("ANTHROPIC_API_KEY is optional.")
+    print("Only needed if you want coding agents to use Claude Pro (API key auth).")
+    print("You can also inject OAuth credentials later via Telegram (recommended).")
+    anthropic_key = input("Paste your ANTHROPIC_API_KEY (or press Enter to skip): ").strip()
 
     # Write .env
     lines = [
         f"OPENCLAW_VERSION={DEFAULTS['OPENCLAW_VERSION']}",
         f"OPENCLAW_GATEWAY_TOKEN={token}",
         f"TELEGRAM_BOT_TOKEN={telegram_token}",
-        f"ANTHROPIC_API_KEY={anthropic_key}",
+        f"REPO_HOST_PATH={repo_path}",
+        f"DOCKER_GID={docker_gid}",
+        f"OLLAMA_MODEL={DEFAULTS['OLLAMA_MODEL']}",
     ]
-    if gemini_key:
-        lines.append(f"GEMINI_API_KEY={gemini_key}")
+    if anthropic_key:
+        lines.append(f"ANTHROPIC_API_KEY={anthropic_key}")
 
     with open(ENV_FILE, "w", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
@@ -83,9 +113,11 @@ def main():
     print(f"Written: {ENV_FILE}")
     print()
     print("Next steps:")
-    print("  docker compose down -v   # remove old state volume")
-    print("  make up                  # build and start")
-    print("  make logs                # watch startup, then pair Telegram")
+    print("  make up      # build image and start the stack")
+    print("  make logs    # watch startup, then pair Telegram (/start)")
+    print()
+    print("GPU (NVIDIA):")
+    print("  make gpu-up  # start with GPU acceleration for Ollama")
 
 
 if __name__ == "__main__":

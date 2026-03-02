@@ -5,17 +5,20 @@ agent-manager.py — Background agent spawner with real-time Telegram updates
 Listens on 127.0.0.1:3004.
 
 Endpoints:
-  POST   /spawn          Start a Claude Code agent in the background
-  GET    /status         List all agents (running, completed, failed, cancelled)
+  POST   /spawn          Start a coding agent in the background
+  GET    /status         List all agents (running, completed, failed, cancelled) + current config
   DELETE /agent/<id>     Cancel a running agent
   POST   /logging        Toggle progress logging ({"enabled": true/false})
+  POST   /backend        Set default backend/model ({"backend": "ollama|claude-pro", "model": "..."})
 
 The agent runs `claude -p --output-format stream-json`, parses NDJSON events,
 and sends real-time tool-call progress + final result to Telegram via the Bot API.
 
 Config via environment variables:
   TELEGRAM_BOT_TOKEN   — Telegram bot token (required for Telegram updates)
-  ANTHROPIC_API_KEY    — Anthropic API key (used unless OAuth token is present)
+  ANTHROPIC_API_KEY    — Anthropic API key (optional, used for Claude Pro if no OAuth creds)
+  OLLAMA_HOST          — Ollama base URL (default: http://ollama:11434)
+  OLLAMA_MODEL         — Default Ollama model (default: kimi-k2.5:cloud)
   AGENT_MANAGER_PORT   — port to listen on (default: 3004)
 """
 
@@ -29,21 +32,57 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
 # ── Config ──────────────────────────────────────────────────────────────────
-MANAGER_PORT       = int(os.environ.get("AGENT_MANAGER_PORT", 3004))
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-CREDENTIALS_FILE   = os.path.expanduser("~/.claude/.credentials.json")
-ALLOWFROM_FILE     = os.path.expanduser("~/.openclaw/credentials/telegram-default-allowFrom.json")
-LOGGING_FLAG       = os.path.expanduser("~/.openclaw/agent-logging-enabled")
-CLAUDE_TOOLS       = "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch"
-CLAUDE_TIMEOUT     = 600   # seconds per agent
-MAX_MSG_LEN        = 4000  # Telegram character limit
+MANAGER_PORT         = int(os.environ.get("AGENT_MANAGER_PORT", 3004))
+TELEGRAM_BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+OLLAMA_HOST          = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
+DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "kimi-k2.5:cloud")
+CREDENTIALS_FILE     = os.path.expanduser("~/.claude/.credentials.json")
+ALLOWFROM_FILE       = os.path.expanduser("~/.openclaw/credentials/telegram-default-allowFrom.json")
+LOGGING_FLAG         = os.path.expanduser("~/.openclaw/agent-logging-enabled")
+BACKEND_FILE         = os.path.expanduser("~/.openclaw/agent-backend")
+MODEL_FILE           = os.path.expanduser("~/.openclaw/agent-model")
+CLAUDE_TOOLS         = "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch"
+CLAUDE_TIMEOUT       = 600   # seconds per agent
+MAX_MSG_LEN          = 4000  # Telegram character limit
 
 # ── Global job registry ─────────────────────────────────────────────────────
-_jobs      = {}             # job_id → {status, task, start_time, end_time, proc}
+_jobs      = {}   # job_id → {status, task, backend, model, start_time, end_time, proc}
 _jobs_lock = threading.Lock()
 
 
-# ── OAuth helpers (mirrors claude-bridge.py) ─────────────────────────────────
+# ── Backend state helpers ────────────────────────────────────────────────────
+
+def _get_default_backend():
+    """Return current default backend: 'ollama' or 'claude-pro'."""
+    try:
+        with open(BACKEND_FILE) as f:
+            return f.read().strip() or "ollama"
+    except Exception:
+        return "ollama"
+
+
+def _set_default_backend(backend):
+    """Persist the default backend to disk."""
+    with open(BACKEND_FILE, "w") as f:
+        f.write(backend)
+
+
+def _get_default_model():
+    """Return current default Ollama model."""
+    try:
+        with open(MODEL_FILE) as f:
+            return f.read().strip() or DEFAULT_OLLAMA_MODEL
+    except Exception:
+        return DEFAULT_OLLAMA_MODEL
+
+
+def _set_default_model(model):
+    """Persist the default model to disk."""
+    with open(MODEL_FILE, "w") as f:
+        f.write(model)
+
+
+# ── OAuth helpers ────────────────────────────────────────────────────────────
 
 def _get_access_token():
     """Return a valid OAuth access token, or None (fall back to ANTHROPIC_API_KEY)."""
@@ -56,24 +95,14 @@ def _get_access_token():
     if "claudeAiOauth" not in creds:
         return None
 
-    oauth       = creds["claudeAiOauth"]
-    expires_ms  = oauth.get("expiresAt", 0)
-    now_ms      = int(time.time() * 1000)
+    oauth      = creds["claudeAiOauth"]
+    expires_ms = oauth.get("expiresAt", 0)
+    now_ms     = int(time.time() * 1000)
 
     if now_ms >= expires_ms:
         return None   # expired — fall back to API key
 
     return oauth.get("accessToken")
-
-
-def _build_env():
-    """Build subprocess env: prefer OAuth token over ANTHROPIC_API_KEY."""
-    env   = os.environ.copy()
-    token = _get_access_token()
-    if token:
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-        env.pop("ANTHROPIC_API_KEY", None)
-    return env
 
 
 # ── Telegram helpers ─────────────────────────────────────────────────────────
@@ -141,15 +170,35 @@ def _summarize_input(inp):
 
 # ── Agent runner (background thread) ─────────────────────────────────────────
 
-def _run_agent(job_id, task, chat_id):
-    cmd = [
-        "claude", "-p", task,
-        "--output-format", "stream-json",
-        "--dangerously-skip-permissions",
-        "--allowedTools", CLAUDE_TOOLS,
-        "--max-turns", "30",
-    ]
-    env = _build_env()
+def _run_agent(job_id, task, chat_id, backend, model):
+    env = os.environ.copy()
+
+    if backend == "ollama":
+        env["ANTHROPIC_BASE_URL"]   = OLLAMA_HOST
+        env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
+        env.pop("ANTHROPIC_API_KEY", None)
+        cmd = [
+            "claude", "-p", task,
+            "--model", model,
+            "--output-format", "stream-json",
+            "--dangerously-skip-permissions",
+            "--allowedTools", CLAUDE_TOOLS,
+            "--max-turns", "30",
+        ]
+    else:  # claude-pro
+        token = _get_access_token()
+        if token:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+            env.pop("ANTHROPIC_API_KEY", None)
+        env.pop("ANTHROPIC_BASE_URL", None)
+        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        cmd = [
+            "claude", "-p", task,
+            "--output-format", "stream-json",
+            "--dangerously-skip-permissions",
+            "--allowedTools", CLAUDE_TOOLS,
+            "--max-turns", "30",
+        ]
 
     try:
         proc = subprocess.Popen(
@@ -259,6 +308,8 @@ class ManagerHandler(BaseHTTPRequestHandler):
             self._handle_spawn(body)
         elif self.path == "/logging":
             self._handle_logging(body)
+        elif self.path == "/backend":
+            self._handle_backend(body)
         else:
             self.send_error(404, "Not Found")
 
@@ -283,6 +334,8 @@ class ManagerHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "Missing 'task' field"})
             return
 
+        backend = body.get("backend") or _get_default_backend()
+        model   = body.get("model") or (_get_default_model() if backend == "ollama" else None)
         chat_id = body.get("chat_id") or _get_default_chat_id()
         job_id  = f"agent_{int(time.time())}"
 
@@ -290,21 +343,22 @@ class ManagerHandler(BaseHTTPRequestHandler):
             _jobs[job_id] = {
                 "status":     "running",
                 "task":       task,
+                "backend":    backend,
+                "model":      model,
                 "start_time": time.time(),
                 "end_time":   None,
                 "proc":       None,
             }
 
-        # Notify user immediately before the agent does any work
-        task_summary = task[:100] + ("..." if len(task) > 100 else "")
-        send_telegram(chat_id, f"🤖 Agent `{job_id}` started:\n_{task_summary}_")
+        task_summary  = task[:100] + ("..." if len(task) > 100 else "")
+        backend_label = f"ollama/{model}" if backend == "ollama" else "claude-pro"
+        send_telegram(chat_id, f"🤖 Agent `{job_id}` started [{backend_label}]:\n_{task_summary}_")
 
-        # Launch background thread — returns control to caller immediately
-        t = threading.Thread(target=_run_agent, args=(job_id, task, chat_id), daemon=True)
+        t = threading.Thread(target=_run_agent, args=(job_id, task, chat_id, backend, model), daemon=True)
         t.start()
 
-        self._send_json(200, {"job_id": job_id, "status": "started"})
-        print(f"[agent-manager] Spawned {job_id}: {task_summary}", flush=True)
+        self._send_json(200, {"job_id": job_id, "status": "started", "backend": backend, "model": model})
+        print(f"[agent-manager] Spawned {job_id} [{backend_label}]: {task_summary}", flush=True)
 
     def _handle_status(self):
         with _jobs_lock:
@@ -312,6 +366,10 @@ class ManagerHandler(BaseHTTPRequestHandler):
                 jid: {k: v for k, v in info.items() if k != "proc"}
                 for jid, info in _jobs.items()
             }
+        snapshot["_config"] = {
+            "default_backend": _get_default_backend(),
+            "default_model":   _get_default_model(),
+        }
         self._send_json(200, snapshot)
 
     def _handle_cancel(self, job_id):
@@ -347,6 +405,24 @@ class ManagerHandler(BaseHTTPRequestHandler):
             msg = "Logging disabled — only final results will appear in Telegram."
         self._send_json(200, {"logging": enabled, "message": msg})
         print(f"[agent-manager] {msg}", flush=True)
+
+    def _handle_backend(self, body):
+        backend = body.get("backend", "").strip().lower()
+        if backend not in ("ollama", "claude-pro"):
+            self._send_json(400, {"error": "backend must be 'ollama' or 'claude-pro'"})
+            return
+        _set_default_backend(backend)
+        model = body.get("model", "").strip()
+        if model and backend == "ollama":
+            _set_default_model(model)
+        current_model = _get_default_model() if backend == "ollama" else None
+        suffix = f", model: {current_model}" if current_model else ""
+        self._send_json(200, {
+            "backend": backend,
+            "model":   current_model,
+            "message": f"Default backend set to '{backend}'{suffix}",
+        })
+        print(f"[agent-manager] Backend set to {backend}{suffix}", flush=True)
 
     # ── Utility ───────────────────────────────────────────────────────────────
 
