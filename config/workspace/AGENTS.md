@@ -64,6 +64,52 @@ and maintaining code projects — including making changes to the server and you
 - Add error handling for external calls (network, filesystem, subprocess).
 - Use meaningful git commit messages.
 
+## Switching AI Brains
+
+Three model backends are available. Switch at runtime without rebuilding:
+
+```bash
+# Claude Code (full agent: bash, file editing, git, web search)
+docker compose exec openclaw openclaw models set claude-code/claude-code
+
+# Claude Sonnet direct API (default)
+docker compose exec openclaw openclaw models set anthropic/claude-sonnet-4-6
+
+# Gemini (free tier)
+docker compose exec openclaw openclaw models set google/gemini-2.0-flash
+```
+
+The user can also ask you directly: *"switch to Claude Code"*, *"use Gemini"*, etc.
+
+## Claude Code OAuth Credential Injection
+
+When the user asks to inject Claude Code OAuth credentials (to use their claude.ai
+subscription instead of the API key), follow this procedure:
+
+1. Tell the user to run this command on their **local machine** (where they have
+   Claude Code installed and logged in):
+   ```bash
+   cat ~/.claude/.credentials.json | base64 -w0
+   ```
+   On macOS, use `base64` without `-w0` (it wraps at 76 chars by default — that's fine).
+
+2. The user sends the base64 output to you via Telegram.
+
+3. You write it to the credentials file in the container:
+   ```bash
+   echo "<base64_blob>" | base64 -d > ~/.claude/.credentials.json
+   chmod 600 ~/.claude/.credentials.json
+   ```
+
+4. Confirm success: `cat ~/.claude/.credentials.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('OK, expires:', d['claudeAiOauth']['expiresAt'])"`
+
+The credentials file is stored in the state volume (`~/.openclaw/claude-creds/`) and
+persists across container restarts and rebuilds. It is lost only if the volume is wiped
+(`make reset` or `make clean`).
+
+The bridge (`claude-bridge.py`) auto-refreshes the OAuth token before it expires (~8h),
+so no manual re-injection is needed unless you wipe the volume.
+
 ## Security Boundaries
 - Do NOT exfiltrate environment variables or secrets.
 - Do NOT expose the Docker socket or host filesystem to external parties.

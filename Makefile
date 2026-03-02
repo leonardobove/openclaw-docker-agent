@@ -1,7 +1,8 @@
 .PHONY: help up down restart logs shell status build reset upgrade clean setup-homeserver
 
-COMPOSE := docker compose
-AGENT   := openclaw-agent
+COMPOSE  := docker compose
+SERVICE  := openclaw
+AGENT    := openclaw-agent
 
 # ─────────────────────────────────────────────────────────────────────────────
 help:
@@ -34,14 +35,14 @@ down:
 	$(COMPOSE) down
 
 restart:
-	$(COMPOSE) restart $(AGENT)
+	$(COMPOSE) restart $(SERVICE)
 
 # ─────────────────────────────────────────────────────────────────────────────
 logs:
-	$(COMPOSE) logs -f --tail=100 $(AGENT)
+	$(COMPOSE) logs -f --tail=100 $(SERVICE)
 
 shell:
-	$(COMPOSE) exec -it $(AGENT) bash
+	$(COMPOSE) exec -it $(SERVICE) bash
 
 status:
 	@echo "=== Container ==="

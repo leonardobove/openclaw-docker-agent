@@ -34,6 +34,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── Install OpenClaw globally ──────────────────────────────────────────────
 RUN npm install -g openclaw@${OPENCLAW_VERSION} --omit=dev 2>&1 | tail -10
 
+# ── Install Claude Code CLI ────────────────────────────────────────────────
+RUN npm install -g @anthropic-ai/claude-code --omit=dev 2>&1 | tail -10
+
 # ── Docker CLI (for self-rebuild capability via mounted socket) ────────────
 RUN install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
@@ -59,7 +62,8 @@ COPY --chown=openclaw:openclaw config/openclaw.json       /etc/openclaw/openclaw
 COPY --chown=openclaw:openclaw config/workspace/AGENTS.md /etc/openclaw/workspace/AGENTS.md
 COPY --chown=openclaw:openclaw config/workspace/SOUL.md   /etc/openclaw/workspace/SOUL.md
 COPY                           scripts/entrypoint.sh      /usr/local/bin/entrypoint.sh
-RUN chmod 755 /usr/local/bin/entrypoint.sh
+COPY                           scripts/claude-bridge.py   /usr/local/bin/claude-bridge.py
+RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/claude-bridge.py
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 USER openclaw

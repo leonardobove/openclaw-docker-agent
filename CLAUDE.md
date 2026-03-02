@@ -14,14 +14,19 @@ Controlled via Telegram. No public URL. No reverse proxy. Single container.
 Telegram app (phone)
        ↕  (HTTPS, Telegram's servers — bot polls outbound)
 OpenClaw agent (Docker container, port 18789 on loopback only)
-       ↓  (HTTPS)
-Anthropic Claude API  /  Google Gemini API
+       ↓  (HTTPS, or via local bridge)
+Anthropic Claude API  /  Google Gemini API  /  Claude Code CLI (local bridge on :3001)
 ```
 
 **Stack:**
 - **OpenClaw** — Node.js AI agent framework (npm package `openclaw`), gateway on `ws://127.0.0.1:18789`
 - **Telegram** — smartphone interface via outbound long-polling (no webhook, no exposed ports)
-- **LLM** — Anthropic Claude Sonnet 4.6 (default), switchable to Gemini 2.0 Flash without rebuild
+- **LLM** — Three switchable brains (no rebuild needed):
+  - `anthropic/claude-sonnet-4-6` — default, direct API
+  - `google/gemini-2.0-flash` — free tier
+  - `claude-code/claude-code` — Claude Code CLI via local HTTP bridge (`scripts/claude-bridge.py`)
+- **Claude Code bridge** — Python HTTP server on `localhost:3001`; translates Anthropic Messages
+  API calls into `claude -p` subprocess invocations; manages OAuth token refresh automatically
 
 ---
 
@@ -41,7 +46,8 @@ Stack is UP. Single container `openclaw-agent` is healthy.
 
 - Telegram bot: `@openclaw_docker_agent_bot` — connected, user `leobove` is paired
 - Active model: `anthropic/claude-sonnet-4-6`
-- Both Anthropic and Google providers are configured — switch without rebuild
+- Three providers configured: anthropic, google, claude-code — switch without rebuild
+- Claude Code bridge: running on `localhost:3001` inside the container
 
 ---
 
@@ -55,7 +61,8 @@ openclaw-docker-agent/
 │       ├── AGENTS.md          Agent behaviour instructions (seeded into workspace)
 │       └── SOUL.md            Agent persona
 ├── scripts/
-│   ├── entrypoint.sh          Container init: seeds config on first run, starts gateway
+│   ├── entrypoint.sh          Container init: seeds config on first run, starts bridge + gateway
+│   ├── claude-bridge.py       Local HTTP bridge: OpenClaw → Claude Code CLI (port 3001)
 │   ├── gen-env.py             Interactive .env generator (always use this, not heredoc)
 │   ├── setup-claude.sh        Installs Claude Code CLI and opens a session in this repo
 │   └── homeserver/            One-time Linux server setup scripts
@@ -100,6 +107,11 @@ docker compose exec openclaw openclaw models list
 docker compose exec openclaw openclaw models set google/gemini-2.0-flash
 docker compose exec openclaw openclaw models set anthropic/claude-sonnet-4-6
 docker compose exec openclaw openclaw models set anthropic/claude-haiku-4-5-20251001
+docker compose exec openclaw openclaw models set claude-code/claude-code
+
+# Claude Code OAuth credential injection (run on your LOCAL machine, then paste to Telegram)
+cat ~/.claude/.credentials.json | base64 -w0   # Linux
+cat ~/.claude/.credentials.json | base64        # macOS
 ```
 
 ---

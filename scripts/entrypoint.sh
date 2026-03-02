@@ -63,6 +63,20 @@ git config --global safe.directory /home/openclaw/repo
 git config --global user.name  "OpenClaw Agent"
 git config --global user.email "openclaw-agent@openclaw-docker-agent"
 
+# ── Persist Claude Code credentials in state volume ────────────────────────
+# ~/.claude/ is symlinked into the state volume so credentials survive rebuilds.
+# Lost only on `make reset` / `make clean` (which wipe the volume).
+CLAUDE_CREDS_DIR="${OPENCLAW_HOME}/claude-creds"
+mkdir -p "${CLAUDE_CREDS_DIR}"
+rm -rf "${HOME}/.claude"
+ln -s "${CLAUDE_CREDS_DIR}" "${HOME}/.claude"
+log "Claude Code credentials dir: ${CLAUDE_CREDS_DIR}"
+
+# ── Start Claude Code bridge ───────────────────────────────────────────────
+python3 /usr/local/bin/claude-bridge.py &
+log "Claude Code bridge started (PID $!)"
+sleep 1
+
 # ── Start OpenClaw Gateway ─────────────────────────────────────────────────
 log "Starting OpenClaw Gateway..."
 exec openclaw gateway run
