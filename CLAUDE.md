@@ -15,18 +15,24 @@ Telegram app (phone)
        ↕  (HTTPS, Telegram's servers — bot polls outbound)
 OpenClaw agent (Docker container, port 18789 on loopback only)
        ↓  (HTTPS, or via local bridge)
-Anthropic Claude API  /  Google Gemini API  /  Claude Code CLI (local bridge on :3001)
+Anthropic Claude API  /  Google Gemini API  /  Claude Code CLI (local bridge on :3001)  /  Groq Cloud API (local bridge on :3003)
 ```
 
 **Stack:**
 - **OpenClaw** — Node.js AI agent framework (npm package `openclaw`), gateway on `ws://127.0.0.1:18789`
 - **Telegram** — smartphone interface via outbound long-polling (no webhook, no exposed ports)
-- **LLM** — Three switchable brains (no rebuild needed):
+- **LLM** — Five switchable brains (no rebuild needed):
   - `anthropic/claude-sonnet-4-6` — default, direct API
   - `google/gemini-2.0-flash` — free tier
   - `claude-code/claude-code` — Claude Code CLI via local HTTP bridge (`scripts/claude-bridge.py`)
+  - `ollama/qwen2.5-coder:7b` — local coding model via Ollama sidecar (`scripts/ollama-bridge.py`)
+  - `groq/qwen-qwq-32b` — Groq Cloud QwQ-32B reasoning model via local HTTP bridge (`scripts/groq-bridge.py`)
 - **Claude Code bridge** — Python HTTP server on `localhost:3001`; translates Anthropic Messages
   API calls into `claude -p` subprocess invocations; manages OAuth token refresh automatically
+- **Ollama bridge** — Python HTTP server on `localhost:3002`; translates Anthropic Messages API
+  calls into Ollama `/api/chat` requests; Ollama runs as a Docker sidecar service
+- **Groq bridge** — Python HTTP server on `localhost:3003`; translates Anthropic Messages API
+  calls into Groq's OpenAI-compatible `/openai/v1/chat/completions` endpoint; requires `GROQ_API_KEY`
 
 ---
 
@@ -46,7 +52,7 @@ Stack is UP. Single container `openclaw-agent` is healthy.
 
 - Telegram bot: `@openclaw_docker_agent_bot` — connected, user `leobove` is paired
 - Active model: `anthropic/claude-sonnet-4-6`
-- Three providers configured: anthropic, google, claude-code — switch without rebuild
+- Five providers configured: anthropic, google, claude-code, ollama, groq — switch without rebuild
 - Claude Code bridge: running on `localhost:3001` inside the container
 
 ---
@@ -61,8 +67,10 @@ openclaw-docker-agent/
 │       ├── AGENTS.md          Agent behaviour instructions (seeded into workspace)
 │       └── SOUL.md            Agent persona
 ├── scripts/
-│   ├── entrypoint.sh          Container init: seeds config on first run, starts bridge + gateway
+│   ├── entrypoint.sh          Container init: seeds config on first run, starts bridges + gateway
 │   ├── claude-bridge.py       Local HTTP bridge: OpenClaw → Claude Code CLI (port 3001)
+│   ├── ollama-bridge.py       Local HTTP bridge: OpenClaw → Ollama API (port 3002)
+│   ├── groq-bridge.py         Local HTTP bridge: OpenClaw → Groq Cloud API (port 3003)
 │   ├── gen-env.py             Interactive .env generator (always use this, not heredoc)
 │   ├── setup-claude.sh        Installs Claude Code CLI and opens a session in this repo
 │   └── homeserver/            One-time Linux server setup scripts
@@ -108,6 +116,13 @@ docker compose exec openclaw openclaw models set google/gemini-2.0-flash
 docker compose exec openclaw openclaw models set anthropic/claude-sonnet-4-6
 docker compose exec openclaw openclaw models set anthropic/claude-haiku-4-5-20251001
 docker compose exec openclaw openclaw models set claude-code/claude-code
+docker compose exec openclaw openclaw models set ollama/qwen2.5-coder:7b
+docker compose exec openclaw openclaw models set groq/qwen-qwq-32b
+
+# Ollama model management
+docker compose exec ollama ollama pull qwen2.5-coder:7b   # pull default model (required on first use)
+docker compose exec ollama ollama pull <model>             # pull any other Ollama model
+docker compose exec ollama ollama list                     # list downloaded models
 
 # Claude Code OAuth credential injection (run on your LOCAL machine, then paste to Telegram)
 cat ~/.claude/.credentials.json | base64 -w0   # Linux
@@ -124,6 +139,8 @@ OPENCLAW_GATEWAY_TOKEN=<64 hex chars>    # openssl rand -hex 32
 TELEGRAM_BOT_TOKEN=<from @BotFather>
 ANTHROPIC_API_KEY=<from console.anthropic.com>
 GEMINI_API_KEY=<from aistudio.google.com/apikey>   # free tier available
+GROQ_API_KEY=<from console.groq.com>               # optional; needed only for groq/qwen-qwq-32b
+GROQ_MODEL=qwen-qwq-32b                            # optional; override to use a different Groq model
 ```
 
 Generate with: `python3 scripts/gen-env.py`
@@ -187,7 +204,7 @@ Paired user IDs are stored in:
 
 ## Switching LLMs
 
-Both providers are pre-configured. Switch at any time **without rebuilding**:
+All providers are pre-configured. Switch at any time **without rebuilding**:
 
 ```bash
 # Switch to Gemini (free)
@@ -198,9 +215,29 @@ docker compose exec openclaw openclaw models set anthropic/claude-sonnet-4-6
 
 # Cheaper/faster Claude
 docker compose exec openclaw openclaw models set anthropic/claude-haiku-4-5-20251001
+
+# Switch to local Ollama model (pull first if not already downloaded)
+docker compose exec ollama ollama pull qwen2.5-coder:7b
+docker compose exec openclaw openclaw models set ollama/qwen2.5-coder:7b
+
+# Switch to Groq Cloud QwQ-32B reasoning model (requires GROQ_API_KEY in .env)
+docker compose exec openclaw openclaw models set groq/qwen-qwq-32b
 ```
 
-Or ask the bot directly: *"switch to Gemini 2.0 Flash"*
+Or ask the bot directly: *"switch to Gemini 2.0 Flash"*, *"switch to Ollama"*, *"switch to Groq"*
+
+**Ollama model selection:** `qwen2.5-coder:7b` is the default local model — a top-tier open-source
+coding model optimised for code generation, debugging, and explanation. To use a different model:
+1. Edit `.env` and add `OLLAMA_MODEL=<model-name>` (e.g. `devstral` for a larger agentic coder)
+2. Pull the model: `docker compose exec ollama ollama pull <model-name>`
+3. Restart: `make restart`
+
+**Groq model selection:** `qwen-qwq-32b` is the default Groq model — a 32B parameter reasoning
+model hosted on Groq Cloud with a 128K context window, fast inference, and strong coding ability.
+To use a different Groq-hosted model:
+1. Edit `.env` and set `GROQ_MODEL=<model-id>` (check available models at console.groq.com)
+2. Update `config/openclaw.json` to add the new model under the `groq` provider
+3. Restart: `make restart`
 
 `models set` updates `/home/openclaw/.openclaw/agents/main/agent/models.json` live — no restart needed.
 

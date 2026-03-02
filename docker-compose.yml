@@ -1,12 +1,30 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # OpenClaw Autonomous Coding Agent — Docker Compose
 #
-# Single service: openclaw-agent
+# Services: openclaw-agent, ollama
 # Access: Telegram bot (dmPolicy=pairing — send /start to pair)
-# LLM: Anthropic Claude Sonnet 4.6
+# LLM: Anthropic Claude Sonnet 4.6 (default) | Gemini | Claude Code | Ollama | Groq
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
+
+  # ── Ollama (local LLM server) ────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:11434:11434"   # accessible on loopback only
+
+    volumes:
+      - ollama-data:/root/.ollama
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   # ── OpenClaw Agent ──────────────────────────────────────────────────────────
   openclaw:
@@ -19,6 +37,9 @@ services:
     container_name: openclaw-agent
     restart: unless-stopped
 
+    depends_on:
+      - ollama
+
     env_file: .env
     environment:
       OPENCLAW_HOME:          /home/openclaw/.openclaw
@@ -27,6 +48,12 @@ services:
       NODE_ENV:               production
       # Host path to this repo — needed so docker compose commands resolve paths correctly
       REPO_HOST_PATH:         /home/leonardo/openclaw-docker-agent
+      # Ollama config — override OLLAMA_MODEL to change the local model
+      OLLAMA_HOST:            http://ollama:11434
+      OLLAMA_MODEL:           ${OLLAMA_MODEL:-qwen2.5-coder:7b}
+      # Groq config — cloud-hosted QwQ-32B reasoning model
+      GROQ_API_KEY:           ${GROQ_API_KEY}
+      GROQ_MODEL:             ${GROQ_MODEL:-qwen-qwq-32b}
 
     volumes:
       - openclaw-state:/home/openclaw/.openclaw
@@ -70,3 +97,8 @@ volumes:
     driver: local
     labels:
       com.openclaw.description: "Agent persistent state: workspace, sessions, memory"
+
+  ollama-data:
+    driver: local
+    labels:
+      com.openclaw.description: "Ollama model weights and config"

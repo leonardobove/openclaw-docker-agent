@@ -77,6 +77,16 @@ python3 /usr/local/bin/claude-bridge.py &
 log "Claude Code bridge started (PID $!)"
 sleep 1
 
+# ── Start Ollama bridge ────────────────────────────────────────────────────
+python3 /usr/local/bin/ollama-bridge.py &
+log "Ollama bridge started (PID $!)"
+sleep 1
+
+# ── Start Groq bridge ──────────────────────────────────────────────────────
+python3 /usr/local/bin/groq-bridge.py &
+log "Groq bridge started (PID $!)"
+sleep 1
+
 # ── Start OpenClaw Gateway ─────────────────────────────────────────────────
 log "Starting OpenClaw Gateway..."
 exec openclaw gateway run
