@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 # ── Config ─────────────────────────────────────────────────────────────────
 BRIDGE_PORT  = int(os.environ.get("BRIDGE_PORT", 3003))
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL   = os.environ.get("GROQ_MODEL", "qwen-qwq-32b")
+GROQ_MODEL   = os.environ.get("GROQ_MODEL", "qwen/qwen3-32b")
 GROQ_BASE    = "https://api.groq.com/openai/v1"
 REQUEST_TIMEOUT = 120  # seconds
 

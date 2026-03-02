@@ -90,8 +90,8 @@
         "api": "anthropic-messages",
         "models": [
           {
-            "id": "qwen-qwq-32b",
-            "name": "QwQ 32B Reasoning (Groq Cloud)",
+            "id": "qwen/qwen3-32b",
+            "name": "Qwen3 32B (Groq Cloud)",
             "api": "anthropic-messages",
             "input": ["text"],
             "contextWindow": 131072,
