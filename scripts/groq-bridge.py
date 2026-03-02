@@ -138,6 +138,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 headers={
                     "Content-Type":  "application/json",
                     "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "User-Agent":    "groq-bridge/1.0",
                 },
                 method="POST",
             )
@@ -211,6 +212,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 headers={
                     "Content-Type":  "application/json",
                     "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "User-Agent":    "groq-bridge/1.0",
                 },
                 method="POST",
             )
