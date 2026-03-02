@@ -83,10 +83,12 @@ def _get_default_chat_id():
     try:
         with open(ALLOWFROM_FILE) as f:
             data = json.load(f)
+        # Format: {"version": 1, "allowFrom": ["123456789"]}
+        if isinstance(data, dict) and "allowFrom" in data:
+            return int(data["allowFrom"][0])
+        # Fallback: plain list ["123456789"]
         if isinstance(data, list) and data:
             return int(data[0])
-        if isinstance(data, dict) and data:
-            return int(next(iter(data)))
     except Exception as e:
         print(f"[agent-manager] Cannot read default chat_id: {e}", flush=True)
     return None
