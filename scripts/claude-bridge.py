@@ -92,7 +92,12 @@ def get_access_token():
             print("[bridge] Token refreshed successfully.", flush=True)
             return new_oauth["accessToken"]
         except Exception as e:
-            print(f"[bridge] Token refresh failed: {e} — using existing token.", flush=True)
+            print(f"[bridge] Token refresh failed: {e}", flush=True)
+            # If the token is already expired, fall back to ANTHROPIC_API_KEY rather
+            # than passing an expired OAuth token to claude (which causes a 401).
+            if now_ms >= expires_at_ms:
+                print("[bridge] Token is expired and refresh failed — falling back to ANTHROPIC_API_KEY.", flush=True)
+                return None
 
     return oauth.get("accessToken")
 
