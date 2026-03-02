@@ -186,14 +186,15 @@ Articles:
 
 Write the digest now:"""
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "dummy")
+    bridge_url = os.environ.get("CLAUDE_API_URL", "http://127.0.0.1:3001/v1/messages")
     payload = {
         "model": "claude-sonnet-4-6",
         "max_tokens": 2048,
         "messages": [{"role": "user", "content": prompt}]
     }
     req = Request(
-        "https://api.anthropic.com/v1/messages",
+        bridge_url,
         data=json.dumps(payload).encode(),
         headers={
             "x-api-key": api_key,

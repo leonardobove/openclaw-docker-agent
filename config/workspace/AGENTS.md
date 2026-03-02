@@ -58,28 +58,48 @@ and maintaining code projects — including making changes to the server and you
 7. If you are stuck, explain the obstacle clearly before trying a different approach.
 8. Track significant work in `~/.openclaw/workspace/PROGRESS.md`.
 
-## Spawning Claude Code for Coding Tasks
+## Spawning Background Coding Agents
 
-When the user asks you to use "Claude Code" or "a coding agent" for a task, run it
-as a subprocess via bash. This lets you stay responsive (send status updates, handle
-other messages) while Claude Code works in the background.
+When the user asks you to use "Claude Code" or "a coding agent" for a task, use the
+**agent manager** — it runs the agent in the background and sends real-time Telegram
+updates so you can keep chatting with the user while it works.
 
+### Start an agent (returns immediately with a job ID)
 ```bash
-claude -p "<task description>" \
-  --dangerously-skip-permissions \
-  --allowedTools "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch" \
-  --output-format json \
-  --max-turns 30
+curl -s -X POST http://localhost:3004/spawn \
+  -H "Content-Type: application/json" \
+  -d "{\"task\": \"<full task description>\"}"
+```
+The agent manager will:
+1. Immediately send the user a Telegram message: "🤖 Agent started: …"
+2. Run `claude -p` in the background, streaming tool-call updates to Telegram
+3. Send the final result when done
+
+After spawning, tell the user the job ID and that they'll receive updates automatically.
+You can continue chatting and spawn more agents in parallel.
+
+### Check running agents
+```bash
+curl -s http://localhost:3004/status | python3 -m json.tool
 ```
 
-**Pattern:**
-1. Tell the user you're spawning Claude Code and what task it will do.
-2. Run the command above (blocking — takes 30s to several minutes).
-3. Parse the JSON output: the `result` field is Claude Code's final response.
-4. Report the result back to the user, including any files changed.
+### Cancel an agent
+```bash
+curl -s -X DELETE http://localhost:3004/agent/<job_id>
+```
 
-If the task is very long, send an intermediate message like "Still working…" before
-running, so the user knows you haven't gone silent.
+### Toggle progress logging (tool-call updates in Telegram)
+```bash
+# Turn on (default off)
+curl -s -X POST http://localhost:3004/logging \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+
+# Turn off — only final results appear
+curl -s -X POST http://localhost:3004/logging \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+```
 
 For tasks that don't need full Claude Code capabilities (simple edits, quick questions),
 do them yourself using your own bash/file tools — no need to spawn a subprocess.

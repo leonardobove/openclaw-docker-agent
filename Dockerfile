@@ -65,7 +65,8 @@ COPY                           scripts/entrypoint.sh      /usr/local/bin/entrypo
 COPY                           scripts/claude-bridge.py   /usr/local/bin/claude-bridge.py
 COPY                           scripts/ollama-bridge.py   /usr/local/bin/ollama-bridge.py
 COPY                           scripts/groq-bridge.py     /usr/local/bin/groq-bridge.py
-RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/claude-bridge.py /usr/local/bin/ollama-bridge.py /usr/local/bin/groq-bridge.py
+COPY                           scripts/agent-manager.py   /usr/local/bin/agent-manager.py
+RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/claude-bridge.py /usr/local/bin/ollama-bridge.py /usr/local/bin/groq-bridge.py /usr/local/bin/agent-manager.py
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 USER openclaw

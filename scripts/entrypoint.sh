@@ -87,6 +87,11 @@ python3 /usr/local/bin/groq-bridge.py &
 log "Groq bridge started (PID $!)"
 sleep 1
 
+# ── Start Agent Manager ─────────────────────────────────────────────────────
+python3 /usr/local/bin/agent-manager.py &
+log "Agent manager started (PID $!)"
+sleep 1
+
 # ── Start OpenClaw Gateway ─────────────────────────────────────────────────
 log "Starting OpenClaw Gateway..."
 exec openclaw gateway run
