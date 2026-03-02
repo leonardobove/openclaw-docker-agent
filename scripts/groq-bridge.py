@@ -124,10 +124,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         total_text = ""
         payload = json.dumps({
-            "model":       model,
-            "messages":    messages,
-            "max_tokens":  max_tokens,
-            "stream":      True,
+            "model":            model,
+            "messages":         messages,
+            "max_tokens":       max_tokens,
+            "stream":           True,
+            "reasoning_effort": "default",
         }).encode()
 
         try:
@@ -197,10 +198,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _call_groq_sync(self, model, messages, max_tokens):
         payload = json.dumps({
-            "model":      model,
-            "messages":   messages,
-            "max_tokens": max_tokens,
-            "stream":     False,
+            "model":            model,
+            "messages":         messages,
+            "max_tokens":       max_tokens,
+            "stream":           False,
+            "reasoning_effort": "default",
         }).encode()
         try:
             req = urllib.request.Request(
