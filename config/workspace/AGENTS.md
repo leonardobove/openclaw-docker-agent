@@ -9,7 +9,7 @@ and maintaining code projects — including making changes to the server and you
 
 - **Container name:** `openclaw-agent`
 - **Inside the container:** your home is `/home/openclaw/`
-- **Repo on host:** `/home/leonardo/openclaw-docker-agent` (the repo that defines this container)
+- **Repo on host:** set via `$REPO_HOST_PATH` (e.g. `/home/leonardo/openclaw-docker-agent`)
 - **Repo inside container:** `/home/openclaw/repo` (bind-mounted — same files, live)
 - **Your workspace:** `/home/openclaw/.openclaw/workspace/` (persisted across restarts)
 - **Full context file:** `/home/openclaw/repo/CLAUDE.md` — read this for complete project details
@@ -58,62 +58,39 @@ and maintaining code projects — including making changes to the server and you
 7. If you are stuck, explain the obstacle clearly before trying a different approach.
 8. Track significant work in `~/.openclaw/workspace/PROGRESS.md`.
 
-## Switching AI Brains
+## Two AI Tiers — Know Which to Use
 
-The bot brain is powered by Ollama. Switch models at runtime without rebuilding:
+This system has two distinct AI tiers:
 
-```bash
-# Switch to a different cloud model
-docker compose exec openclaw openclaw models set ollama/glm-5:cloud
+| Tier | Model | When to use |
+|---|---|---|
+| **Brain (you)** | Small model (`$BRAIN_MODEL`, e.g. `qwen3:8b`) | Conversation, planning, simple tasks, short answers |
+| **Coding agent** | Heavy model (`$OLLAMA_MODEL`, e.g. `qwen3-coder:latest`) | Writing/editing code, debugging, multi-file changes |
+| **Claude Pro agent** | Claude (Anthropic API, OAuth) | Best quality coding, complex reasoning, when explicitly requested |
 
-# Switch to a local model (pull it first if not already downloaded)
-docker compose exec ollama ollama pull qwen2.5-coder:7b
-docker compose exec openclaw openclaw models set ollama/qwen2.5-coder:7b
-
-# Switch back to the default cloud model
-docker compose exec openclaw openclaw models set ollama/kimi-k2.5:cloud
-```
-
-The user can also ask you directly: *"switch to GLM-5"*, *"use Qwen2.5 Coder locally"*, etc.
-
-### Ollama model management
-```bash
-# List available (downloaded) models
-docker compose exec ollama ollama list
-
-# Pull a new model
-docker compose exec ollama ollama pull <model-name>
-
-# Check Ollama version
-docker compose exec ollama ollama --version
-```
+**Default rule:** For any task involving writing, editing, or reasoning about code — spawn a
+background coding agent using the heavy Ollama model. Do not try to do significant coding tasks
+yourself with the brain model. Reserve direct bash/file tools for trivial edits only.
 
 ## Spawning Background Coding Agents
 
-When the user asks you to use "a coding agent" for a task, use the **agent manager** —
-it runs the agent in the background and sends real-time Telegram updates so you can keep
-chatting with the user while it works.
+When the user asks for coding help, use the **agent manager** — it runs the agent in the
+background and sends real-time Telegram updates so you can keep chatting.
 
-### Start an agent (returns immediately with a job ID)
+### Default: Ollama heavy model (qwen3-coder:latest)
 
-**Default backend (Ollama):**
 ```bash
 curl -s -X POST http://localhost:3004/spawn \
   -H "Content-Type: application/json" \
-  -d '{"task": "<full task description>"}'
+  -d '{"task": "<full task description>", "backend": "ollama", "model": "qwen3-coder:latest"}'
 ```
 
-**Explicit backend + model:**
-```bash
-# Ollama backend with a specific model
-curl -s -X POST http://localhost:3004/spawn \
-  -H "Content-Type: application/json" \
-  -d '{"task": "<task>", "backend": "ollama", "model": "qwen2.5-coder:7b"}'
+### Claude Pro (best quality, use when explicitly requested)
 
-# Claude Pro backend (uses OAuth credentials from ~/.claude/)
+```bash
 curl -s -X POST http://localhost:3004/spawn \
   -H "Content-Type: application/json" \
-  -d '{"task": "<task>", "backend": "claude-pro"}'
+  -d '{"task": "<full task description>", "backend": "claude-pro"}'
 ```
 
 The agent manager will:
@@ -136,71 +113,80 @@ curl -s -X DELETE http://localhost:3004/agent/<job_id>
 
 ### Toggle progress logging (tool-call updates in Telegram)
 ```bash
-# Turn on (default off)
 curl -s -X POST http://localhost:3004/logging \
   -H "Content-Type: application/json" \
-  -d '{"enabled": true}'
-
-# Turn off — only final results appear
-curl -s -X POST http://localhost:3004/logging \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": false}'
+  -d '{"enabled": true}'   # or false
 ```
 
 ### Set default agent backend
 ```bash
-# Switch agents to use Ollama (with a specific model)
+# Ollama heavy model
 curl -s -X POST http://localhost:3004/backend \
   -H "Content-Type: application/json" \
-  -d '{"backend": "ollama", "model": "kimi-k2.5:cloud"}'
+  -d '{"backend": "ollama", "model": "qwen3-coder:latest"}'
 
-# Switch agents to use Claude Pro (real Anthropic API via OAuth)
+# Claude Pro (OAuth)
 curl -s -X POST http://localhost:3004/backend \
   -H "Content-Type: application/json" \
   -d '{"backend": "claude-pro"}'
 ```
 
-The default backend is stored in `~/.openclaw/agent-backend` and persists across restarts.
-The default Ollama model is stored in `~/.openclaw/agent-model`.
+## Switching the Brain Model
 
-For tasks that don't need full agent capabilities (simple edits, quick questions),
-do them yourself using your own bash/file tools — no need to spawn a subprocess.
+The brain (you) runs on Ollama via the LAN Windows machine. Switch models at runtime:
+
+```bash
+# List what's available
+ollama_host=$(printenv OLLAMA_HOST)
+curl -s "$ollama_host/api/tags" | python3 -m json.tool
+
+# Switch brain to a different model (no rebuild needed)
+docker compose -f "$REPO_HOST_PATH/docker-compose.yml" exec openclaw \
+  openclaw models set ollama/qwen3:8b
+
+# Or update BRAIN_MODEL in .env and restart (survives rebuilds)
+```
+
+Note: Ollama runs on the **Windows machine** — there is no `ollama` Docker container.
+Do NOT run `docker compose exec ollama ...`. To manage Ollama models, ask the user to
+run commands on the Windows machine, or provide them the command to run.
 
 ## Claude Pro OAuth Credential Injection
 
-When the user asks to use their Claude Pro subscription for coding agents, follow this
-procedure to inject their OAuth credentials:
+When the user asks to use their Claude Pro subscription for coding agents:
 
-1. Tell the user to run this command on their **local machine** (where they have
-   Claude Code installed and logged in):
+**Preferred method (from the Linux machine directly):**
+```bash
+# Run on the Linux host (outside the container):
+make inject-claude-creds
+```
+
+**Manual method (when the user is on a different machine):**
+
+1. Tell the user to run on their **local machine**:
    ```bash
-   cat ~/.claude/.credentials.json | base64 -w0
+   cat ~/.claude/.credentials.json | base64 -w0   # Linux
+   cat ~/.claude/.credentials.json | base64        # macOS
    ```
-   On macOS, use `base64` without `-w0`.
 
-2. The user sends the base64 output to you via Telegram.
+2. User sends the base64 output via Telegram.
 
-3. You write it to the credentials file in the container:
+3. Write it to the container:
    ```bash
    echo "<base64_blob>" | base64 -d > ~/.claude/.credentials.json
    chmod 600 ~/.claude/.credentials.json
    ```
 
-4. Confirm success:
+4. Verify and switch backend:
    ```bash
    cat ~/.claude/.credentials.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('OK, expires:', d['claudeAiOauth']['expiresAt'])"
-   ```
-
-5. Switch the agent backend to Claude Pro:
-   ```bash
    curl -s -X POST http://localhost:3004/backend \
      -H "Content-Type: application/json" \
      -d '{"backend": "claude-pro"}'
    ```
 
-The credentials file is stored in the state volume (`~/.openclaw/claude-creds/`) and
-persists across container restarts and rebuilds. It is lost only if the volume is wiped
-(`make reset` or `make clean`).
+Credentials live in the state volume (`~/.openclaw/claude-creds/`) — persist across restarts,
+lost only on `make reset` / `make clean`.
 
 ## Security Boundaries
 - Do NOT exfiltrate environment variables or secrets.

@@ -23,7 +23,8 @@ ENV_FILE  = os.path.join(REPO_ROOT, ".env")
 
 DEFAULTS = {
     "OPENCLAW_VERSION": "latest",
-    "OLLAMA_MODEL":     "qwen2.5-coder:7b",
+    "BRAIN_MODEL":      "qwen3:8b",
+    "OLLAMA_MODEL":     "qwen3-coder:latest",
     "DOCKER_GID":       "999",
 }
 
@@ -99,6 +100,22 @@ def main():
     if not ollama_host.startswith("http"):
         ollama_host = "http://" + ollama_host
 
+    # Brain model (small, for chat)
+    print()
+    print("BRAIN_MODEL is the small/fast model used for Telegram chat.")
+    print(f"Default: {DEFAULTS['BRAIN_MODEL']}  (pull on Windows: ollama pull {DEFAULTS['BRAIN_MODEL']})")
+    brain_model = input(f"BRAIN_MODEL [{DEFAULTS['BRAIN_MODEL']}]: ").strip()
+    if not brain_model:
+        brain_model = DEFAULTS["BRAIN_MODEL"]
+
+    # Coding agent model (heavy, for spawned agents)
+    print()
+    print("OLLAMA_MODEL is the heavy model used for spawned coding agents.")
+    print(f"Default: {DEFAULTS['OLLAMA_MODEL']}  (pull on Windows: ollama pull {DEFAULTS['OLLAMA_MODEL']})")
+    ollama_model = input(f"OLLAMA_MODEL [{DEFAULTS['OLLAMA_MODEL']}]: ").strip()
+    if not ollama_model:
+        ollama_model = DEFAULTS["OLLAMA_MODEL"]
+
     # Anthropic API key (optional — for Claude Pro coding agents)
     print()
     print("ANTHROPIC_API_KEY is optional.")
@@ -114,7 +131,8 @@ def main():
         f"REPO_HOST_PATH={repo_path}",
         f"DOCKER_GID={docker_gid}",
         f"OLLAMA_HOST={ollama_host}",
-        f"OLLAMA_MODEL={DEFAULTS['OLLAMA_MODEL']}",
+        f"BRAIN_MODEL={brain_model}",
+        f"OLLAMA_MODEL={ollama_model}",
     ]
     if anthropic_key:
         lines.append(f"ANTHROPIC_API_KEY={anthropic_key}")

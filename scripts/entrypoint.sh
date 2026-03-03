@@ -39,6 +39,7 @@ CONFIG_DEST="${OPENCLAW_HOME}/openclaw.json"
 if [[ -f "${CONFIG_SRC}" ]]; then
     sed \
         -e "s|\${OLLAMA_HOST}|${OLLAMA_HOST:-}|g" \
+        -e "s|\${BRAIN_MODEL}|${BRAIN_MODEL:-qwen3:8b}|g" \
         -e "s|\${OPENCLAW_GATEWAY_TOKEN}|${OPENCLAW_GATEWAY_TOKEN:-}|g" \
         -e "s|\${TELEGRAM_BOT_TOKEN}|${TELEGRAM_BOT_TOKEN:-}|g" \
         -e "s|\${OPENCLAW_HOME}|${OPENCLAW_HOME}|g" \

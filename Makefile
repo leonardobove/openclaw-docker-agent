@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs shell status build reset upgrade clean setup-homeserver test-ollama
+.PHONY: help up down restart logs shell status build reset upgrade clean setup-homeserver test-ollama inject-claude-creds
 
 COMPOSE  := docker compose
 SERVICE  := openclaw
@@ -18,6 +18,7 @@ help:
 	@printf '  \033[36m%-22s\033[0m %s\n' "upgrade"          "Upgrade OpenClaw to latest and rebuild"
 	@printf '  \033[36m%-22s\033[0m %s\n' "clean"            "Remove container, image, and volume"
 	@printf '  \033[36m%-22s\033[0m %s\n' "test-ollama"      "Test connectivity to Windows Ollama"
+	@printf '  \033[36m%-22s\033[0m %s\n' "inject-claude-creds" "Copy local Claude Pro OAuth creds into container"
 	@printf '\n'
 	@printf '\033[1m  Server setup (run on Linux server):\033[0m\n'
 	@printf '  \033[36m%-22s\033[0m %s\n' "setup-homeserver" "Full home server setup (static IP, SSH, firewall, Tailscale, Docker)"
@@ -78,6 +79,20 @@ clean:
 # ── Network ───────────────────────────────────────────────────────────────────
 test-ollama:
 	bash scripts/network/test-ollama.sh
+
+# ── Claude Pro credentials ─────────────────────────────────────────────────────
+inject-claude-creds:
+	@test -f ~/.claude/.credentials.json \
+	  || (echo "ERROR: ~/.claude/.credentials.json not found. Run 'claude' first to log in."; exit 1)
+	@echo "Injecting Claude Pro credentials into container..."
+	@cat ~/.claude/.credentials.json | $(COMPOSE) exec -T $(SERVICE) \
+	  bash -c 'mkdir -p ~/.claude && cat > ~/.claude/.credentials.json && chmod 600 ~/.claude/.credentials.json'
+	@echo "Switching coding agents to claude-pro backend..."
+	@curl -sf -X POST http://localhost:3004/backend \
+	  -H "Content-Type: application/json" \
+	  -d '{"backend":"claude-pro"}' | python3 -m json.tool
+	@echo ""
+	@echo "Done. Coding agents now use Claude Pro (OAuth). To revert: curl -X POST http://localhost:3004/backend -d '{\"backend\":\"ollama\"}'"
 
 # ── Server setup ──────────────────────────────────────────────────────────────
 setup-homeserver:
