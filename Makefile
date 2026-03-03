@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs shell status build reset upgrade clean setup-homeserver test-ollama inject-claude-creds
+.PHONY: help up down restart logs shell status build reset upgrade clean setup-homeserver inject-claude-creds
 
 COMPOSE  := docker compose
 SERVICE  := openclaw
@@ -17,7 +17,6 @@ help:
 	@printf '  \033[36m%-22s\033[0m %s\n' "reset"            "Wipe agent state volume and restart clean"
 	@printf '  \033[36m%-22s\033[0m %s\n' "upgrade"          "Upgrade OpenClaw to latest and rebuild"
 	@printf '  \033[36m%-22s\033[0m %s\n' "clean"            "Remove container, image, and volume"
-	@printf '  \033[36m%-22s\033[0m %s\n' "test-ollama"      "Test connectivity to Windows Ollama"
 	@printf '  \033[36m%-22s\033[0m %s\n' "inject-claude-creds" "Copy local Claude Pro OAuth creds into container"
 	@printf '\n'
 	@printf '\033[1m  Server setup (run on Linux server):\033[0m\n'
@@ -75,10 +74,6 @@ clean:
 	@echo "WARNING: Removes the container, image, and state volume."
 	@printf "Type 'yes' to confirm: "; read confirm; [ "$$confirm" = "yes" ] || (echo "Aborted."; exit 1)
 	$(COMPOSE) down -v --rmi all --remove-orphans
-
-# ── Network ───────────────────────────────────────────────────────────────────
-test-ollama:
-	bash scripts/network/test-ollama.sh
 
 # ── Claude Pro credentials ─────────────────────────────────────────────────────
 inject-claude-creds:

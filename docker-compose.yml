@@ -1,14 +1,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # OpenClaw Autonomous Coding Agent — Docker Compose
 #
-# Single service: openclaw-agent
-# LLM: external Ollama on Windows (LAN) — set OLLAMA_HOST in .env
+# Two services:
+#   openclaw  — AI agent (brain: Claude Sonnet via Anthropic API)
+#   ollama    — LLM sidecar (cloud models: kimi-k2.5:cloud, glm-5:cloud)
+#
 # Access: Telegram bot (dmPolicy=pairing — send /start to pair)
 #
 # Prerequisites:
 #   - .env file with all required variables (run: python3 scripts/gen-env.py)
-#   - Ollama running on Windows LAN machine (see scripts/windows/setup-ollama.ps1)
-#   - OLLAMA_HOST set in .env to the Windows machine's URL (e.g. http://192.168.1.100:11434)
+#   - ANTHROPIC_API_KEY in .env (powers the chatbot brain)
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -32,17 +33,16 @@ services:
       NODE_ENV:               production
       # Host path to this repo — used by the agent for docker compose commands
       REPO_HOST_PATH:         ${REPO_HOST_PATH:?Set REPO_HOST_PATH in .env (absolute path to this repo on the host)}
-      # Ollama on Windows LAN — full URL to the Windows machine
-      OLLAMA_HOST:            ${OLLAMA_HOST:?Set OLLAMA_HOST in .env (e.g. http://192.168.1.100:11434)}
-      # Brain model — small/fast, used for Telegram chat (must be pulled on Windows)
-      BRAIN_MODEL:            ${BRAIN_MODEL:-qwen3:8b}
-      # Coding agent model — heavy model used when spawning background agents
-      OLLAMA_MODEL:           ${OLLAMA_MODEL:-qwen3-coder:latest}
+      # Coding agent model — Ollama cloud model for spawned coding agents
+      OLLAMA_MODEL:           ${OLLAMA_MODEL:-kimi-k2.5:cloud}
 
     volumes:
       - openclaw-state:/home/openclaw/.openclaw
       - .:/home/openclaw/repo                      # relative — works on any machine
       - /var/run/docker.sock:/var/run/docker.sock
+
+    depends_on:
+      - ollama
 
     # ── Security hardening ─────────────────────────────────────────────────
     user: "10001:10001"
@@ -75,9 +75,30 @@ services:
       retries:      3
       start_period: 90s
 
+  # ── Ollama LLM sidecar ──────────────────────────────────────────────────────
+  # Serves Anthropic-compatible /v1/messages API (Ollama >= 0.6).
+  # No local model downloads needed — cloud models work out of the box.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+
+    volumes:
+      - ollama-data:/root/.ollama
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
 # ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
   openclaw-state:
     driver: local
     labels:
       com.openclaw.description: "Agent persistent state: workspace, sessions, memory"
+  ollama-data:
+    driver: local
+    labels:
+      com.openclaw.description: "Ollama model storage"

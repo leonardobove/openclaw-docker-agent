@@ -64,13 +64,12 @@ This system has two distinct AI tiers:
 
 | Tier | Model | When to use |
 |---|---|---|
-| **Brain (you)** | Small model (`$BRAIN_MODEL`, e.g. `qwen3:8b`) | Conversation, planning, simple tasks, short answers |
-| **Coding agent** | Heavy model (`$OLLAMA_MODEL`, e.g. `qwen3-coder:latest`) | Writing/editing code, debugging, multi-file changes |
-| **Claude Pro agent** | Claude (Anthropic API, OAuth) | Best quality coding, complex reasoning, when explicitly requested |
+| **Brain (you)** | Claude Sonnet 4.6 (Anthropic API) | Conversation, planning, simple tasks, short answers |
+| **Coding agent** | Claude Pro (OAuth) or Ollama cloud model | Writing/editing code, debugging, multi-file changes |
 
 **Default rule:** For any task involving writing, editing, or reasoning about code — spawn a
-background coding agent using the heavy Ollama model. Do not try to do significant coding tasks
-yourself with the brain model. Reserve direct bash/file tools for trivial edits only.
+background coding agent. Do not try to do significant coding tasks yourself in the chat thread.
+Reserve direct bash/file tools for trivial edits only.
 
 ## Spawning Background Coding Agents
 
@@ -79,15 +78,15 @@ yourself with the brain model. Reserve direct bash/file tools for trivial edits 
 When the user asks for a coding task, run this bash command immediately:
 
 ```bash
-# Ollama heavy model (default for coding tasks)
-curl -s -X POST http://localhost:3004/spawn \
-  -H "Content-Type: application/json" \
-  -d "{\"task\": \"TASK_DESCRIPTION\", \"backend\": \"ollama\", \"model\": \"qwen3-coder:latest\"}"
-
-# Claude Pro (use when user explicitly asks for it)
+# Claude Pro (default — best quality, uses OAuth credentials)
 curl -s -X POST http://localhost:3004/spawn \
   -H "Content-Type: application/json" \
   -d "{\"task\": \"TASK_DESCRIPTION\", \"backend\": \"claude-pro\"}"
+
+# Ollama cloud model (alternative — no OAuth needed)
+curl -s -X POST http://localhost:3004/spawn \
+  -H "Content-Type: application/json" \
+  -d "{\"task\": \"TASK_DESCRIPTION\", \"backend\": \"ollama\", \"model\": \"kimi-k2.5:cloud\"}"
 ```
 
 Replace `TASK_DESCRIPTION` with the full task. If the user hasn't given a specific task, ask them for it before spawning.
@@ -119,36 +118,33 @@ curl -s -X POST http://localhost:3004/logging \
 
 ### Set default agent backend
 ```bash
-# Ollama heavy model
-curl -s -X POST http://localhost:3004/backend \
-  -H "Content-Type: application/json" \
-  -d '{"backend": "ollama", "model": "qwen3-coder:latest"}'
-
 # Claude Pro (OAuth)
 curl -s -X POST http://localhost:3004/backend \
   -H "Content-Type: application/json" \
   -d '{"backend": "claude-pro"}'
+
+# Ollama cloud model
+curl -s -X POST http://localhost:3004/backend \
+  -H "Content-Type: application/json" \
+  -d '{"backend": "ollama", "model": "kimi-k2.5:cloud"}'
 ```
 
 ## Switching the Brain Model
 
-The brain (you) runs on Ollama via the LAN Windows machine. Switch models at runtime:
+The brain (you) runs on Claude Sonnet 4.6 via the Anthropic API. To switch:
 
 ```bash
-# List what's available
-ollama_host=$(printenv OLLAMA_HOST)
-curl -s "$ollama_host/api/tags" | python3 -m json.tool
-
-# Switch brain to a different model (no rebuild needed)
+# Switch to Kimi K2.5 (Ollama cloud — no API key needed)
 docker compose -f "$REPO_HOST_PATH/docker-compose.yml" exec openclaw \
-  openclaw models set ollama/qwen3:8b
+  openclaw models set ollama/kimi-k2.5:cloud
 
-# Or update BRAIN_MODEL in .env and restart (survives rebuilds)
+# Switch back to Claude Sonnet (Anthropic API)
+docker compose -f "$REPO_HOST_PATH/docker-compose.yml" exec openclaw \
+  openclaw models set anthropic/claude-sonnet-4-6
 ```
 
-Note: Ollama runs on the **Windows machine** — there is no `ollama` Docker container.
-Do NOT run `docker compose exec ollama ...`. To manage Ollama models, ask the user to
-run commands on the Windows machine, or provide them the command to run.
+Ollama runs as a sidecar container (`ollama`). Cloud models work without downloading anything.
+To use local models: `docker compose exec ollama ollama pull <model>`.
 
 ## Claude Pro OAuth Credential Injection
 

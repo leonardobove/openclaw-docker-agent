@@ -31,32 +31,30 @@ else
 fi
 
 # ── Always apply config from repo with env var substitution ───────────────
-# OpenClaw does not interpolate env vars in provider baseUrl fields.
-# We render the template on every start so OLLAMA_HOST (and others) are
-# always current — no manual force-copy needed after changing .env.
+# OpenClaw does not interpolate env vars natively (except apiKey/token fields).
+# We render the template on every start so secrets are always current.
 CONFIG_SRC="/home/openclaw/repo/config/openclaw.json"
 CONFIG_DEST="${OPENCLAW_HOME}/openclaw.json"
 if [[ -f "${CONFIG_SRC}" ]]; then
     sed \
-        -e "s|\${OLLAMA_HOST}|${OLLAMA_HOST:-}|g" \
-        -e "s|\${BRAIN_MODEL}|${BRAIN_MODEL:-qwen3:8b}|g" \
+        -e "s|\${ANTHROPIC_API_KEY}|${ANTHROPIC_API_KEY:-}|g" \
         -e "s|\${OPENCLAW_GATEWAY_TOKEN}|${OPENCLAW_GATEWAY_TOKEN:-}|g" \
         -e "s|\${TELEGRAM_BOT_TOKEN}|${TELEGRAM_BOT_TOKEN:-}|g" \
         -e "s|\${OPENCLAW_HOME}|${OPENCLAW_HOME}|g" \
         "${CONFIG_SRC}" > "${CONFIG_DEST}"
     chmod 600 "${CONFIG_DEST}"
-    log "Config rendered from repo (OLLAMA_HOST=${OLLAMA_HOST:-<unset>})."
+    log "Config rendered from repo."
 else
     log "WARNING: repo config not found at ${CONFIG_SRC}, using cached version."
 fi
 
-# ── Patch OLLAMA_HOST in the models.json state file ───────────────────────
+# ── Patch Ollama baseUrl in the models.json state file ────────────────────
 # OpenClaw writes a models.json with a cached baseUrl when 'models set' is used.
-# This file takes precedence over openclaw.json, so we keep its baseUrl in sync.
+# This file takes precedence over openclaw.json, so we keep its Ollama URL correct.
 MODELS_JSON="${OPENCLAW_HOME}/agents/main/agent/models.json"
-if [[ -f "${MODELS_JSON}" && -n "${OLLAMA_HOST:-}" ]]; then
-    sed -i "s|\"baseUrl\": \"[^\"]*\"|\"baseUrl\": \"${OLLAMA_HOST}\"|g" "${MODELS_JSON}"
-    log "models.json baseUrl updated to ${OLLAMA_HOST}."
+if [[ -f "${MODELS_JSON}" ]]; then
+    sed -i "s|\"baseUrl\": \"[^\"]*ollama[^\"]*\"|\"baseUrl\": \"http://ollama:11434\"|g" "${MODELS_JSON}"
+    log "models.json Ollama baseUrl normalised to http://ollama:11434."
 fi
 
 # ── Always sync workspace instruction files ────────────────────────────────
