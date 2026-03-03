@@ -35,6 +35,22 @@ fi
 # We render the template on every start so secrets are always current.
 CONFIG_SRC="/home/openclaw/repo/config/openclaw.json"
 CONFIG_DEST="${OPENCLAW_HOME}/openclaw.json"
+
+# Save the primary model from state before overwriting — 'openclaw models set'
+# writes the choice into openclaw.json, which the template render would reset.
+SAVED_PRIMARY=""
+if [[ -f "${CONFIG_DEST}" ]]; then
+    SAVED_PRIMARY=$(python3 -c "
+import json, sys
+try:
+    with open('${CONFIG_DEST}') as f:
+        d = json.load(f)
+    print(d['agents']['defaults']['model']['primary'])
+except Exception:
+    pass
+" 2>/dev/null || true)
+fi
+
 if [[ -f "${CONFIG_SRC}" ]]; then
     sed \
         -e "s|\${ANTHROPIC_API_KEY}|${ANTHROPIC_API_KEY:-}|g" \
@@ -48,13 +64,37 @@ else
     log "WARNING: repo config not found at ${CONFIG_SRC}, using cached version."
 fi
 
+# Restore the primary model if it was changed from the template default.
+TEMPLATE_PRIMARY="anthropic/claude-sonnet-4-6"
+if [[ -n "${SAVED_PRIMARY}" && "${SAVED_PRIMARY}" != "${TEMPLATE_PRIMARY}" ]]; then
+    python3 -c "
+import json
+with open('${CONFIG_DEST}') as f:
+    config = json.load(f)
+config['agents']['defaults']['model']['primary'] = '${SAVED_PRIMARY}'
+with open('${CONFIG_DEST}', 'w') as f:
+    json.dump(config, f, indent=2)
+" 2>/dev/null
+    log "Primary model restored: ${SAVED_PRIMARY}"
+fi
+
 # ── Patch Ollama baseUrl in the models.json state file ────────────────────
 # OpenClaw writes a models.json with a cached baseUrl when 'models set' is used.
 # This file takes precedence over openclaw.json, so we keep its Ollama URL correct.
 MODELS_JSON="${OPENCLAW_HOME}/agents/main/agent/models.json"
 if [[ -f "${MODELS_JSON}" ]]; then
-    sed -i "s|\"baseUrl\": \"[^\"]*ollama[^\"]*\"|\"baseUrl\": \"http://ollama:11434\"|g" "${MODELS_JSON}"
-    log "models.json Ollama baseUrl normalised to http://ollama:11434."
+    # Normalise any Ollama baseUrl (covers docker service name, LAN IPs, etc.)
+    python3 -c "
+import json, re
+with open('${MODELS_JSON}') as f:
+    raw = f.read()
+# Replace baseUrl for the ollama provider entry
+data = json.loads(raw)
+if 'providers' in data and 'ollama' in data['providers']:
+    data['providers']['ollama']['baseUrl'] = 'http://ollama:11434'
+with open('${MODELS_JSON}', 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null && log "models.json Ollama baseUrl normalised to http://ollama:11434." || true
 fi
 
 # ── Always sync workspace instruction files ────────────────────────────────
