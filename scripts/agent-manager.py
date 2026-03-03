@@ -82,29 +82,6 @@ def _set_default_model(model):
         f.write(model)
 
 
-# ── OAuth helpers ────────────────────────────────────────────────────────────
-
-def _get_access_token():
-    """Return a valid OAuth access token, or None (fall back to ANTHROPIC_API_KEY)."""
-    try:
-        with open(CREDENTIALS_FILE) as f:
-            creds = json.load(f)
-    except Exception:
-        return None
-
-    if "claudeAiOauth" not in creds:
-        return None
-
-    oauth      = creds["claudeAiOauth"]
-    expires_ms = oauth.get("expiresAt", 0)
-    now_ms     = int(time.time() * 1000)
-
-    if now_ms >= expires_ms:
-        return None   # expired — fall back to API key
-
-    return oauth.get("accessToken")
-
-
 # ── Telegram helpers ─────────────────────────────────────────────────────────
 
 def _get_default_chat_id():
@@ -186,12 +163,12 @@ def _run_agent(job_id, task, chat_id, backend, model):
             "--max-turns", "30",
         ]
     else:  # claude-pro
-        token = _get_access_token()
-        if token:
-            env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-            env.pop("ANTHROPIC_API_KEY", None)
+        # Don't inject CLAUDE_CODE_OAUTH_TOKEN — let Claude Code read
+        # ~/.claude/.credentials.json directly so it can auto-refresh the
+        # access token via the refresh token when it expires (~8h).
         env.pop("ANTHROPIC_BASE_URL", None)
         env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        env.pop("ANTHROPIC_API_KEY", None)
         cmd = [
             "claude", "-p", task,
             "--output-format", "stream-json",
