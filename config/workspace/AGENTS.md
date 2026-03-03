@@ -131,20 +131,28 @@ curl -s -X POST http://localhost:3004/backend \
 
 ## Switching the Brain Model
 
-The brain (you) runs on Claude Sonnet 4.6 via the Anthropic API. To switch:
+You can change your own brain model and restart yourself. Available models:
 
+| Model ID | Description |
+|---|---|
+| `anthropic/claude-sonnet-4-6` | Claude Sonnet (Anthropic API) |
+| `anthropic/claude-haiku-4-5-20251001` | Claude Haiku (faster, cheaper) |
+| `ollama/kimi-k2.5:cloud` | Kimi K2.5 (Ollama cloud) |
+| `ollama/glm-5:cloud` | GLM-5 (Ollama cloud) |
+| `ollama/qwen2.5-coder:7b` | Qwen2.5 Coder (local) |
+
+**Step 1 — switch model** (takes effect after restart):
 ```bash
-# Switch to Kimi K2.5 (Ollama cloud — no API key needed)
-docker compose -f "$REPO_HOST_PATH/docker-compose.yml" exec openclaw \
-  openclaw models set ollama/kimi-k2.5:cloud
-
-# Switch back to Claude Sonnet (Anthropic API)
-docker compose -f "$REPO_HOST_PATH/docker-compose.yml" exec openclaw \
-  openclaw models set anthropic/claude-sonnet-4-6
+openclaw models set ollama/kimi-k2.5:cloud
+# or: openclaw models set anthropic/claude-sonnet-4-6
 ```
 
-Ollama runs as a sidecar container (`ollama`). Cloud models work without downloading anything.
-To use local models: `docker compose exec ollama ollama pull <model>`.
+**Step 2 — restart yourself** (⚠️ kills the current session — warn the user first):
+```bash
+docker compose -f "$REPO_HOST_PATH/docker-compose.yml" restart openclaw
+```
+
+The model choice persists across restarts automatically.
 
 ## Claude Pro OAuth Credential Injection
 
