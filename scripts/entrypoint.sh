@@ -49,6 +49,15 @@ else
     log "WARNING: repo config not found at ${CONFIG_SRC}, using cached version."
 fi
 
+# ── Patch OLLAMA_HOST in the models.json state file ───────────────────────
+# OpenClaw writes a models.json with a cached baseUrl when 'models set' is used.
+# This file takes precedence over openclaw.json, so we keep its baseUrl in sync.
+MODELS_JSON="${OPENCLAW_HOME}/agents/main/agent/models.json"
+if [[ -f "${MODELS_JSON}" && -n "${OLLAMA_HOST:-}" ]]; then
+    sed -i "s|\"baseUrl\": \"[^\"]*\"|\"baseUrl\": \"${OLLAMA_HOST}\"|g" "${MODELS_JSON}"
+    log "models.json baseUrl updated to ${OLLAMA_HOST}."
+fi
+
 # ── Always sync workspace instruction files ────────────────────────────────
 # AGENTS.md and SOUL.md are instructions, not state — always keep them current.
 mkdir -p "${OPENCLAW_HOME}/workspace"
