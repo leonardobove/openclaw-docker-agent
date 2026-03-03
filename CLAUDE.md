@@ -465,7 +465,12 @@ docker compose up -d --build
     (`OLLAMA_HOST=0.0.0.0:11434`) is only read on Ollama startup. Quit and relaunch Ollama
     from the system tray after running `setup-ollama.ps1`.
 
-16. **Cloud models on Windows** — `kimi-k2.5:cloud` and `glm-5:cloud` require the Windows
+16. **OpenClaw does NOT substitute `${OLLAMA_HOST}` in provider `baseUrl`** — env var
+    interpolation works for gateway token, telegram token, and workspace path, but NOT for
+    `models.providers.*.baseUrl`. The entrypoint uses `sed` to render the config template
+    on every start, so this is handled automatically. Do not bypass the entrypoint.
+
+17. **Cloud models on Windows** — `kimi-k2.5:cloud` and `glm-5:cloud` require the Windows
     machine to reach `ollama.com`. Check internet connectivity if these models fail.
 
 ---

@@ -24,14 +24,29 @@ if [[ ! -f "${OPENCLAW_HOME}/openclaw.json" ]]; then
     mkdir -p "${OPENCLAW_HOME}/memory"
     mkdir -p "${OPENCLAW_HOME}/credentials"
 
-    # Seed config from the image's bundled default
-    cp /etc/openclaw/openclaw.json "${OPENCLAW_HOME}/openclaw.json"
-    chmod 600 "${OPENCLAW_HOME}/openclaw.json"
     chmod 700 "${OPENCLAW_HOME}/credentials"
-
     log "Initialization complete."
 else
-    log "Existing state found — skipping initialization."
+    log "Existing state found."
+fi
+
+# ── Always apply config from repo with env var substitution ───────────────
+# OpenClaw does not interpolate env vars in provider baseUrl fields.
+# We render the template on every start so OLLAMA_HOST (and others) are
+# always current — no manual force-copy needed after changing .env.
+CONFIG_SRC="/home/openclaw/repo/config/openclaw.json"
+CONFIG_DEST="${OPENCLAW_HOME}/openclaw.json"
+if [[ -f "${CONFIG_SRC}" ]]; then
+    sed \
+        -e "s|\${OLLAMA_HOST}|${OLLAMA_HOST:-}|g" \
+        -e "s|\${OPENCLAW_GATEWAY_TOKEN}|${OPENCLAW_GATEWAY_TOKEN:-}|g" \
+        -e "s|\${TELEGRAM_BOT_TOKEN}|${TELEGRAM_BOT_TOKEN:-}|g" \
+        -e "s|\${OPENCLAW_HOME}|${OPENCLAW_HOME}|g" \
+        "${CONFIG_SRC}" > "${CONFIG_DEST}"
+    chmod 600 "${CONFIG_DEST}"
+    log "Config rendered from repo (OLLAMA_HOST=${OLLAMA_HOST:-<unset>})."
+else
+    log "WARNING: repo config not found at ${CONFIG_SRC}, using cached version."
 fi
 
 # ── Always sync workspace instruction files ────────────────────────────────
