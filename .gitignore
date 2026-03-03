@@ -41,9 +41,6 @@ npm-debug.log*
 __pycache__/
 *.pyc
 
-# ── Gmail credentials (secrets — never commit) ─────────────────────────────────
-config/gmail.env
-
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp
