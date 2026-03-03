@@ -18,7 +18,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "OpenClaw — Windows Ollama Setup" -ForegroundColor Cyan
+Write-Host "OpenClaw - Windows Ollama Setup" -ForegroundColor Cyan
 Write-Host "================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -79,7 +79,7 @@ if ($gpus) {
     }
     Write-Host "  Ollama on Windows supports AMD GPUs via ROCm (RX 6000+ / RX 7000+)." -ForegroundColor White
     Write-Host "  Ensure you have the latest AMD Radeon Software drivers installed." -ForegroundColor White
-    Write-Host "  Ollama will auto-detect the GPU — no extra configuration needed." -ForegroundColor White
+    Write-Host "  Ollama will auto-detect the GPU - no extra configuration needed." -ForegroundColor White
 } else {
     $allGpus = Get-WmiObject Win32_VideoController
     Write-Host "  No AMD GPU detected. Available graphics adapters:" -ForegroundColor Yellow
@@ -116,7 +116,7 @@ foreach ($ip in $ips) {
 
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "  1. Restart Ollama (right-click tray icon → Quit, then relaunch)" -ForegroundColor White
+Write-Host "  1. Restart Ollama (right-click tray icon -> Quit, then relaunch)" -ForegroundColor White
 Write-Host "  2. On the Linux machine, set OLLAMA_HOST in .env to one of the URLs above" -ForegroundColor White
 Write-Host "  3. Test connectivity: make test-ollama  (from the Linux repo)" -ForegroundColor White
 Write-Host ""
