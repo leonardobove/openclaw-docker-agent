@@ -133,13 +133,17 @@ curl -s -X POST http://localhost:3004/backend \
 
 You can change your own brain model and restart yourself. Available models:
 
-| Model ID | Description |
-|---|---|
-| `anthropic/claude-sonnet-4-6` | Claude Sonnet (Anthropic API) |
-| `anthropic/claude-haiku-4-5-20251001` | Claude Haiku (faster, cheaper) |
-| `ollama/kimi-k2.5:cloud` | Kimi K2.5 (Ollama cloud) |
-| `ollama/glm-5:cloud` | GLM-5 (Ollama cloud) |
-| `ollama/qwen2.5-coder:7b` | Qwen2.5 Coder (local) |
+| Model ID | Description | Works as brain? |
+|---|---|---|
+| `anthropic/claude-sonnet-4-6` | Claude Sonnet (Anthropic API) | ✅ Recommended |
+| `anthropic/claude-haiku-4-5-20251001` | Claude Haiku (faster, cheaper) | ✅ Yes |
+| `ollama/kimi-k2.5:cloud` | Kimi K2.5 (Ollama cloud) | ⚠️ Simple chat only — breaks on tool use |
+| `ollama/glm-5:cloud` | GLM-5 (Ollama cloud) | ⚠️ Simple chat only — breaks on tool use |
+| `ollama/qwen2.5-coder:7b` | Qwen2.5 Coder (local) | ⚠️ Simple chat only — breaks on tool use |
+
+**Only use Anthropic models as the brain.** Ollama models return malformed tool_use blocks
+that cause OpenClaw to reject every tool call, making the bot non-functional for most tasks.
+Use Ollama models as coding agent backends (via agent-manager), not as the brain.
 
 **Step 1 — switch model** (takes effect after restart):
 ```bash
