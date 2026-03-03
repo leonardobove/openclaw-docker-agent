@@ -88,11 +88,13 @@ inject-claude-creds:
 	@cat ~/.claude/.credentials.json | $(COMPOSE) exec -T $(SERVICE) \
 	  bash -c 'mkdir -p ~/.claude && cat > ~/.claude/.credentials.json && chmod 600 ~/.claude/.credentials.json'
 	@echo "Switching coding agents to claude-pro backend..."
-	@curl -sf -X POST http://localhost:3004/backend \
+	@$(COMPOSE) exec -T $(SERVICE) \
+	  curl -s -X POST http://localhost:3004/backend \
 	  -H "Content-Type: application/json" \
-	  -d '{"backend":"claude-pro"}' | python3 -m json.tool
+	  -d '{"backend":"claude-pro"}'
 	@echo ""
-	@echo "Done. Coding agents now use Claude Pro (OAuth). To revert: curl -X POST http://localhost:3004/backend -d '{\"backend\":\"ollama\"}'"
+	@echo "Done. Coding agents now use Claude Pro (OAuth)."
+	@echo "To revert to Ollama: docker compose exec openclaw curl -s -X POST http://localhost:3004/backend -H 'Content-Type: application/json' -d '{\"backend\":\"ollama\"}'"
 
 # ── Server setup ──────────────────────────────────────────────────────────────
 setup-homeserver:
