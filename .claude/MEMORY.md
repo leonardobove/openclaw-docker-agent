@@ -1,51 +1,55 @@
 # OpenClaw Docker Agent — Session Memory
 
-## Status (last updated: 2026-03-02)
-Stack is TWO containers: openclaw-agent + ollama sidecar.
-- Brain model: ollama/qwen2.5-coder:7b (pulled, working)
+## Status (last updated: 2026-03-03)
+Stack is ONE container: openclaw-agent only. Ollama runs on Windows (native, AMD GPU).
+- Brain model: ollama/qwen2.5-coder:7b (on Windows Ollama)
 - Telegram bot: @openclaw_docker_agent_bot — connected
 - No Caddy, no cloudflared, no public URL
-- NO bridge scripts (removed: claude-bridge.py, ollama-bridge.py, groq-bridge.py)
-- Repo is portable — works on Linux, Windows/WSL2, macOS
+- NO bridge scripts, NO Ollama sidecar on Linux
+- OLLAMA_HOST env var points to Windows machine LAN URL
 
 ## Architecture
 ```
-Telegram (phone) ↔ Telegram servers ↔ OpenClaw (Docker)
-                                            ↓ Anthropic-compatible /v1/messages
-                                       Ollama sidecar (port 11434)
+Telegram (phone) ↔ Telegram servers ↔ OpenClaw (Docker, Linux)
+                                            ↓ Anthropic-compatible /v1/messages over LAN
+                                       Ollama (native Windows, AMD GPU, port 11434)
                                             └── qwen2.5-coder:7b (default, local)
 Coding Agents (agent-manager.py :3004):
-   ├── ollama backend: ANTHROPIC_BASE_URL=http://ollama:11434, ANTHROPIC_AUTH_TOKEN=ollama
+   ├── ollama backend: ANTHROPIC_BASE_URL=<OLLAMA_HOST>, ANTHROPIC_AUTH_TOKEN=ollama
    └── claude-pro backend: CLAUDE_CODE_OAUTH_TOKEN from ~/.claude/.credentials.json
 ```
 
-## Credentials
-- Telegram bot token: in .env as TELEGRAM_BOT_TOKEN
-- Gateway token: in .env as OPENCLAW_GATEWAY_TOKEN
-- REPO_HOST_PATH: in .env (absolute host path to repo) — machine-specific, NOT committed
-- DOCKER_GID: in .env (docker group GID, default 999) — machine-specific, NOT committed
-- ANTHROPIC_API_KEY: optional (only for Claude Pro coding agents with API key auth)
+## Credentials / .env Variables
+- TELEGRAM_BOT_TOKEN: in .env
+- OPENCLAW_GATEWAY_TOKEN: in .env (≥32 chars)
+- REPO_HOST_PATH: in .env (absolute host path to repo on Linux)
+- DOCKER_GID: in .env (docker group GID, default 999)
+- OLLAMA_HOST: in .env — full URL to Windows Ollama (e.g. http://192.168.1.100:11434) — REQUIRED
+- OLLAMA_MODEL: in .env (default coding agent model, default qwen2.5-coder:7b)
+- ANTHROPIC_API_KEY: optional (Claude Pro agents via API key)
 
 ## Key Config Files
-- config/openclaw.json: Single Ollama provider; qwen2.5-coder:7b default; 4 models listed
-- docker-compose.yml: relative bind mount (.:/home/openclaw/repo); REPO_HOST_PATH from .env
-- docker-compose.gpu.yml: NVIDIA GPU override for Ollama (use with make gpu-up)
+- config/openclaw.json: Single Ollama provider; baseUrl="${OLLAMA_HOST}"; 4 models listed
+- docker-compose.yml: single openclaw-agent service; OLLAMA_HOST from .env
 - scripts/entrypoint.sh: state init, workspace sync, SSH keys, git config, claude-creds symlink, agent-manager, gateway run
 - scripts/agent-manager.py: port 3004; /spawn /status /cancel /logging /backend; ollama+claude-pro backends
+- scripts/windows/setup-ollama.ps1: run on Windows (Admin PS) to configure Ollama for LAN + AMD GPU
+- scripts/network/test-ollama.sh: verify Linux→Windows Ollama connectivity (make test-ollama)
 
-## Portability (Windows/WSL2)
-- REPO_HOST_PATH is now in .env (was hardcoded to /home/leonardo/...)
-- Bind mount uses relative path .:/home/openclaw/repo (works everywhere)
-- DOCKER_GID is in .env (default 999, Docker Desktop usually fine)
-- GPU: make gpu-up uses docker-compose.gpu.yml (NVIDIA, requires Container Toolkit or Docker Desktop GPU)
-- Windows setup: WSL2 + Docker Desktop; run all commands from WSL2 terminal
-- gen-env.py auto-detects REPO_HOST_PATH and DOCKER_GID
+## Windows Ollama Setup
+Run scripts/windows/setup-ollama.ps1 in PowerShell as Admin:
+- Sets OLLAMA_HOST=0.0.0.0:11434 system-wide
+- Adds Windows Firewall rule (TCP 11434, Private)
+- Detects AMD GPU
+- Pulls qwen2.5-coder:7b
+- Prints LAN IPs to use in Linux .env
+MUST restart Ollama after running (tray icon → Quit → relaunch).
 
 ## Ollama Direct Connection (No Bridge)
 Ollama ≥ 0.6 serves Anthropic-compatible /v1/messages.
-OpenClaw provider: apiKey="ollama", baseUrl="http://ollama:11434", api="anthropic-messages"
-No bridge process needed — direct HTTP connection works.
-Cloud models (kimi-k2.5:cloud, glm-5:cloud) require newer Ollama than 0.17.x — use local models.
+OpenClaw provider: apiKey="ollama", baseUrl="${OLLAMA_HOST}", api="anthropic-messages"
+No bridge process needed.
+Cloud models (kimi-k2.5:cloud, glm-5:cloud) require Windows machine to reach ollama.com.
 
 ## agent-manager.py — Backend Switching
 Backend state persisted to disk:
@@ -77,11 +81,9 @@ OAuth credentials at ~/.claude/.credentials.json (symlinked to state volume ~/.o
 8. openclaw gateway start daemonizes — use gateway run.
 9. dmPolicy:"pairing" requires admin approval via `openclaw pairing approve <CODE>`.
 10. Ollama ≥ 0.6 required for /v1/messages endpoint.
-11. Cloud models (kimi-k2.5:cloud, glm-5:cloud) need Ollama internet access AND recent version.
-    Ollama 0.17.x does NOT support :cloud models. Use local models instead.
-12. REPO_HOST_PATH must be in .env (absolute host path). The cp command in CLAUDE.md
-    that says `cp /etc/openclaw/openclaw.json` copies the baked IMAGE config, not the
-    edited repo file. To copy the edited file: `cp /home/openclaw/repo/config/openclaw.json ...`
+11. OLLAMA_HOST must be full URL (http://ip:11434) — no trailing slash. Set in .env.
+12. Windows Ollama must restart after setting OLLAMA_HOST env var — right-click tray → Quit → relaunch.
+13. REPO_HOST_PATH must be in .env (absolute host path). To copy edited config: `cp /home/openclaw/repo/config/openclaw.json ...`
 
 ## Telegram Pairing (TWO-STEP)
 1. User sends /start to bot → bot sends pairing code
@@ -90,4 +92,4 @@ OAuth credentials at ~/.claude/.credentials.json (symlinked to state volume ~/.o
 4. Run: `docker compose exec openclaw openclaw pairing list` to see pending
 
 # currentDate
-Today's date is 2026-03-02.
+Today's date is 2026-03-03.
