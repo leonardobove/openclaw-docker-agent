@@ -60,12 +60,18 @@ if [[ -f "${MODELS_JSON}" && -n "${OLLAMA_HOST:-}" ]]; then
 fi
 
 # ── Always sync workspace instruction files ────────────────────────────────
-# AGENTS.md and SOUL.md are instructions, not state — always keep them current.
+# Prefer the live repo bind-mount so edits take effect on restart without rebuild.
+# Fall back to the image-baked copy if the repo isn't mounted yet.
 mkdir -p "${OPENCLAW_HOME}/workspace"
-[[ -f /etc/openclaw/workspace/AGENTS.md ]] \
-    && cp /etc/openclaw/workspace/AGENTS.md "${OPENCLAW_HOME}/workspace/AGENTS.md"
-[[ -f /etc/openclaw/workspace/SOUL.md ]] \
-    && cp /etc/openclaw/workspace/SOUL.md "${OPENCLAW_HOME}/workspace/SOUL.md"
+REPO_WORKSPACE="/home/openclaw/repo/config/workspace"
+IMG_WORKSPACE="/etc/openclaw/workspace"
+for f in AGENTS.md SOUL.md; do
+    if [[ -f "${REPO_WORKSPACE}/${f}" ]]; then
+        cp "${REPO_WORKSPACE}/${f}" "${OPENCLAW_HOME}/workspace/${f}"
+    elif [[ -f "${IMG_WORKSPACE}/${f}" ]]; then
+        cp "${IMG_WORKSPACE}/${f}" "${OPENCLAW_HOME}/workspace/${f}"
+    fi
+done
 
 # ── SSH credentials for git push ──────────────────────────────────────────
 # Source keys live in the repo bind-mount (.ssh/ is gitignored).

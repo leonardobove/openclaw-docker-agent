@@ -74,24 +74,23 @@ yourself with the brain model. Reserve direct bash/file tools for trivial edits 
 
 ## Spawning Background Coding Agents
 
-When the user asks for coding help, use the **agent manager** — it runs the agent in the
-background and sends real-time Telegram updates so you can keep chatting.
+**IMPORTANT:** Always use the agent manager via `curl`. Never use `sessions_spawn`.
 
-### Default: Ollama heavy model (qwen3-coder:latest)
-
-```bash
-curl -s -X POST http://localhost:3004/spawn \
-  -H "Content-Type: application/json" \
-  -d '{"task": "<full task description>", "backend": "ollama", "model": "qwen3-coder:latest"}'
-```
-
-### Claude Pro (best quality, use when explicitly requested)
+When the user asks for a coding task, run this bash command immediately:
 
 ```bash
+# Ollama heavy model (default for coding tasks)
 curl -s -X POST http://localhost:3004/spawn \
   -H "Content-Type: application/json" \
-  -d '{"task": "<full task description>", "backend": "claude-pro"}'
+  -d "{\"task\": \"TASK_DESCRIPTION\", \"backend\": \"ollama\", \"model\": \"qwen3-coder:latest\"}"
+
+# Claude Pro (use when user explicitly asks for it)
+curl -s -X POST http://localhost:3004/spawn \
+  -H "Content-Type: application/json" \
+  -d "{\"task\": \"TASK_DESCRIPTION\", \"backend\": \"claude-pro\"}"
 ```
+
+Replace `TASK_DESCRIPTION` with the full task. If the user hasn't given a specific task, ask them for it before spawning.
 
 The agent manager will:
 1. Immediately send the user a Telegram message: "🤖 Agent started: …"
