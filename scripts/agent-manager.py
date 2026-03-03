@@ -158,6 +158,7 @@ def _run_agent(job_id, task, chat_id, backend, model):
             "claude", "-p", task,
             "--model", model,
             "--output-format", "stream-json",
+            "--verbose",
             "--dangerously-skip-permissions",
             "--allowedTools", CLAUDE_TOOLS,
             "--max-turns", "30",
@@ -172,6 +173,7 @@ def _run_agent(job_id, task, chat_id, backend, model):
         cmd = [
             "claude", "-p", task,
             "--output-format", "stream-json",
+            "--verbose",
             "--dangerously-skip-permissions",
             "--allowedTools", CLAUDE_TOOLS,
             "--max-turns", "30",
