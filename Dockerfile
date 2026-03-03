@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
         python3-venv \
         build-essential \
+        cron \
         unzip \
         wget \
     && rm -rf /var/lib/apt/lists/*
@@ -63,7 +64,8 @@ COPY --chown=openclaw:openclaw config/workspace/AGENTS.md /etc/openclaw/workspac
 COPY --chown=openclaw:openclaw config/workspace/SOUL.md   /etc/openclaw/workspace/SOUL.md
 COPY                           scripts/entrypoint.sh      /usr/local/bin/entrypoint.sh
 COPY                           scripts/agent-manager.py   /usr/local/bin/agent-manager.py
-RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/agent-manager.py
+COPY                           scripts/setup-cron.sh      /usr/local/bin/setup-cron.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/agent-manager.py /usr/local/bin/setup-cron.sh
 
 # ── Runtime ────────────────────────────────────────────────────────────────
 USER openclaw

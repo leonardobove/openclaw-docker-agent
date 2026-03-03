@@ -141,6 +141,10 @@ rm -rf "${HOME}/.claude"
 ln -s "${CLAUDE_CREDS_DIR}" "${HOME}/.claude"
 log "Claude Code credentials dir: ${CLAUDE_CREDS_DIR}"
 
+# ── Start cron for scheduled tasks ────────────────────────────────────────
+/usr/local/bin/setup-cron.sh 2>/dev/null || true
+log "Cron setup complete (Gmail alerts daily at 08:00)."
+
 # ── Start Agent Manager ─────────────────────────────────────────────────────
 python3 /usr/local/bin/agent-manager.py &
 log "Agent manager started (PID $!)"
