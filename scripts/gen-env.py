@@ -9,6 +9,7 @@ What it does:
   - Generates a random 64-hex-char OPENCLAW_GATEWAY_TOKEN
   - Prompts for TELEGRAM_BOT_TOKEN (from @BotFather)
   - Auto-detects REPO_HOST_PATH (asks to confirm)
+  - Prompts for OLLAMA_HOST (Windows machine LAN URL)
   - Optionally prompts for ANTHROPIC_API_KEY (for Claude Pro agents)
   - Writes a clean .env with no trailing whitespace or encoding issues
 """
@@ -73,7 +74,6 @@ def main():
     detected_path = REPO_ROOT
     print(f"Detected repo path: {detected_path}")
     print("This is the absolute host path Docker uses to find the repo.")
-    print("On WSL2: use the Linux path (e.g. /home/youruser/openclaw-docker-agent)")
     repo_path = input(f"REPO_HOST_PATH [{detected_path}]: ").strip()
     if not repo_path:
         repo_path = detected_path
@@ -82,10 +82,22 @@ def main():
     print()
     detected_gid = detect_docker_gid()
     print(f"Detected docker group GID: {detected_gid}")
-    print("(On Docker Desktop for Windows/macOS, 999 usually works fine)")
     docker_gid = input(f"DOCKER_GID [{detected_gid}]: ").strip()
     if not docker_gid:
         docker_gid = detected_gid
+
+    # OLLAMA_HOST — Windows machine LAN URL
+    print()
+    print("OLLAMA_HOST is the full URL to Ollama on your Windows machine.")
+    print("Example: http://192.168.1.100:11434")
+    print("Find the Windows machine IP: run 'ipconfig' in a Windows terminal.")
+    print("Make sure Ollama is configured for LAN access (run scripts/windows/setup-ollama.ps1).")
+    ollama_host = input("OLLAMA_HOST (e.g. http://192.168.1.100:11434): ").strip()
+    if not ollama_host:
+        print("ERROR: OLLAMA_HOST cannot be empty.")
+        sys.exit(1)
+    if not ollama_host.startswith("http"):
+        ollama_host = "http://" + ollama_host
 
     # Anthropic API key (optional — for Claude Pro coding agents)
     print()
@@ -101,6 +113,7 @@ def main():
         f"TELEGRAM_BOT_TOKEN={telegram_token}",
         f"REPO_HOST_PATH={repo_path}",
         f"DOCKER_GID={docker_gid}",
+        f"OLLAMA_HOST={ollama_host}",
         f"OLLAMA_MODEL={DEFAULTS['OLLAMA_MODEL']}",
     ]
     if anthropic_key:
@@ -113,11 +126,13 @@ def main():
     print(f"Written: {ENV_FILE}")
     print()
     print("Next steps:")
-    print("  make up      # build image and start the stack")
-    print("  make logs    # watch startup, then pair Telegram (/start)")
+    print("  1. Verify Ollama is reachable:   make test-ollama")
+    print("  2. Pull a model on Windows:      ollama pull qwen2.5-coder:7b")
+    print("  3. Start the agent:              make up")
+    print("  4. Stream logs and pair:         make logs")
     print()
-    print("GPU (NVIDIA):")
-    print("  make gpu-up  # start with GPU acceleration for Ollama")
+    print("Windows Ollama setup (if not done yet):")
+    print("  Run scripts/windows/setup-ollama.ps1 in PowerShell on the Windows machine.")
 
 
 if __name__ == "__main__":

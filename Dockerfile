@@ -10,7 +10,7 @@ ARG UID=10001
 ARG GID=10001
 
 LABEL org.opencontainers.image.title="openclaw-agent" \
-      org.opencontainers.image.description="Autonomous AI coding agent — OpenClaw + Ollama" \
+      org.opencontainers.image.description="Autonomous AI coding agent — OpenClaw + external Ollama (LAN)" \
       org.opencontainers.image.licenses="MIT"
 
 # ── System dependencies ────────────────────────────────────────────────────

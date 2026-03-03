@@ -1,4 +1,4 @@
-.PHONY: help up gpu-up down restart logs shell status build reset upgrade clean setup-homeserver
+.PHONY: help up down restart logs shell status build reset upgrade clean setup-homeserver test-ollama
 
 COMPOSE  := docker compose
 SERVICE  := openclaw
@@ -7,20 +7,20 @@ AGENT    := openclaw-agent
 # ─────────────────────────────────────────────────────────────────────────────
 help:
 	@printf '\033[1mOpenClaw Agent — Makefile\033[0m\n\n'
-	@printf '  \033[36m%-20s\033[0m %s\n' "up"               "Build image and start the agent (CPU)"
-	@printf '  \033[36m%-20s\033[0m %s\n' "gpu-up"           "Build image and start with NVIDIA GPU support"
-	@printf '  \033[36m%-20s\033[0m %s\n' "down"             "Stop and remove the container"
-	@printf '  \033[36m%-20s\033[0m %s\n' "restart"          "Restart the agent container"
-	@printf '  \033[36m%-20s\033[0m %s\n' "logs"             "Stream agent logs"
-	@printf '  \033[36m%-20s\033[0m %s\n' "shell"            "Open bash shell in agent container"
-	@printf '  \033[36m%-20s\033[0m %s\n' "status"           "Show container and volume status"
-	@printf '  \033[36m%-20s\033[0m %s\n' "build"            "Force rebuild image (no cache)"
-	@printf '  \033[36m%-20s\033[0m %s\n' "reset"            "Wipe agent state volume and restart clean"
-	@printf '  \033[36m%-20s\033[0m %s\n' "upgrade"          "Upgrade OpenClaw to latest and rebuild"
-	@printf '  \033[36m%-20s\033[0m %s\n' "clean"            "Remove container, image, and volume"
+	@printf '  \033[36m%-22s\033[0m %s\n' "up"               "Build image and start the agent"
+	@printf '  \033[36m%-22s\033[0m %s\n' "down"             "Stop and remove the container"
+	@printf '  \033[36m%-22s\033[0m %s\n' "restart"          "Restart the agent container"
+	@printf '  \033[36m%-22s\033[0m %s\n' "logs"             "Stream agent logs"
+	@printf '  \033[36m%-22s\033[0m %s\n' "shell"            "Open bash shell in agent container"
+	@printf '  \033[36m%-22s\033[0m %s\n' "status"           "Show container and volume status"
+	@printf '  \033[36m%-22s\033[0m %s\n' "build"            "Force rebuild image (no cache)"
+	@printf '  \033[36m%-22s\033[0m %s\n' "reset"            "Wipe agent state volume and restart clean"
+	@printf '  \033[36m%-22s\033[0m %s\n' "upgrade"          "Upgrade OpenClaw to latest and rebuild"
+	@printf '  \033[36m%-22s\033[0m %s\n' "clean"            "Remove container, image, and volume"
+	@printf '  \033[36m%-22s\033[0m %s\n' "test-ollama"      "Test connectivity to Windows Ollama"
 	@printf '\n'
 	@printf '\033[1m  Server setup (run on Linux server):\033[0m\n'
-	@printf '  \033[36m%-20s\033[0m %s\n' "setup-homeserver" "Full home server setup (static IP, SSH, firewall, Tailscale, Docker)"
+	@printf '  \033[36m%-22s\033[0m %s\n' "setup-homeserver" "Full home server setup (static IP, SSH, firewall, Tailscale, Docker)"
 	@printf '\n'
 	@printf '  Telegram: send /start to your bot, follow pairing prompt.\n\n'
 
@@ -30,12 +30,6 @@ up: .env
 	@echo ""
 	@echo "Agent started. Stream logs with:  make logs"
 	@echo "Telegram: open your bot and send /start to pair."
-	@echo ""
-
-gpu-up: .env
-	$(COMPOSE) -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
-	@echo ""
-	@echo "Agent started with GPU support. Stream logs with:  make logs"
 	@echo ""
 
 down:
@@ -80,6 +74,10 @@ clean:
 	@echo "WARNING: Removes the container, image, and state volume."
 	@printf "Type 'yes' to confirm: "; read confirm; [ "$$confirm" = "yes" ] || (echo "Aborted."; exit 1)
 	$(COMPOSE) down -v --rmi all --remove-orphans
+
+# ── Network ───────────────────────────────────────────────────────────────────
+test-ollama:
+	bash scripts/network/test-ollama.sh
 
 # ── Server setup ──────────────────────────────────────────────────────────────
 setup-homeserver:

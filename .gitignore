@@ -37,6 +37,13 @@ logs/
 node_modules/
 npm-debug.log*
 
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── Gmail credentials (secrets — never commit) ─────────────────────────────────
+config/gmail.env
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp

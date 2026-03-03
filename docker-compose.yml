@@ -1,34 +1,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # OpenClaw Autonomous Coding Agent — Docker Compose
 #
-# Services: openclaw-agent, ollama
+# Single service: openclaw-agent
+# LLM: external Ollama on Windows (LAN) — set OLLAMA_HOST in .env
 # Access: Telegram bot (dmPolicy=pairing — send /start to pair)
-# LLM: Ollama (qwen2.5-coder:7b default) | switchable at runtime via Telegram
 #
-# GPU: to enable GPU acceleration for Ollama, use the override file:
-#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
-#   or: make gpu-up
+# Prerequisites:
+#   - .env file with all required variables (run: python3 scripts/gen-env.py)
+#   - Ollama running on Windows LAN machine (see scripts/windows/setup-ollama.ps1)
+#   - OLLAMA_HOST set in .env to the Windows machine's URL (e.g. http://192.168.1.100:11434)
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
-
-  # ── Ollama (local LLM server) ────────────────────────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-
-    ports:
-      - "127.0.0.1:11434:11434"   # accessible on loopback only
-
-    volumes:
-      - ollama-data:/root/.ollama
-
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "3"
 
   # ── OpenClaw Agent ──────────────────────────────────────────────────────────
   openclaw:
@@ -41,19 +24,17 @@ services:
     container_name: openclaw-agent
     restart: unless-stopped
 
-    depends_on:
-      - ollama
-
     env_file: .env
     environment:
       OPENCLAW_HOME:          /home/openclaw/.openclaw
       OPENCLAW_STATE_DIR:     /home/openclaw/.openclaw
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
       NODE_ENV:               production
-      # Host path to this repo — set in .env, used by the agent for docker compose commands
+      # Host path to this repo — used by the agent for docker compose commands
       REPO_HOST_PATH:         ${REPO_HOST_PATH:?Set REPO_HOST_PATH in .env (absolute path to this repo on the host)}
-      # Ollama config — OLLAMA_MODEL sets default model for coding agents
-      OLLAMA_HOST:            http://ollama:11434
+      # Ollama on Windows LAN — full URL to the Windows machine
+      OLLAMA_HOST:            ${OLLAMA_HOST:?Set OLLAMA_HOST in .env (e.g. http://192.168.1.100:11434)}
+      # Default model for coding agents (must be pulled on the Windows Ollama first)
       OLLAMA_MODEL:           ${OLLAMA_MODEL:-qwen2.5-coder:7b}
 
     volumes:
@@ -98,8 +79,3 @@ volumes:
     driver: local
     labels:
       com.openclaw.description: "Agent persistent state: workspace, sessions, memory"
-
-  ollama-data:
-    driver: local
-    labels:
-      com.openclaw.description: "Ollama model weights and config"
