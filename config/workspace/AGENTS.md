@@ -151,12 +151,14 @@ openclaw models set ollama/kimi-k2.5:cloud
 # or: openclaw models set anthropic/claude-sonnet-4-6
 ```
 
-**Step 2 — restart yourself** (⚠️ kills the current session — warn the user first):
+**Step 2 — warn the user**, then restart (this kills the current session immediately):
 ```bash
 docker compose -f "$REPO_HOST_PATH/docker-compose.yml" restart openclaw
 ```
 
 The model choice persists across restarts automatically.
+You will automatically send a Telegram message ("✅ Bot restarted and ready.") the moment
+you come back up — the user does not need to do anything.
 
 ## Claude Pro OAuth Credential Injection
 

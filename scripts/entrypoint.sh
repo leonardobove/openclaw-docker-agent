@@ -150,6 +150,33 @@ python3 /usr/local/bin/agent-manager.py &
 log "Agent manager started (PID $!)"
 sleep 1
 
+# ── Send Telegram startup notification ────────────────────────────────────
+# Notify the paired user that the bot is back up after a restart.
+# Skipped on very first run (no allowFrom file yet).
+ALLOWFROM_FILE="${OPENCLAW_HOME}/credentials/telegram-default-allowFrom.json"
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] && [[ -f "${ALLOWFROM_FILE}" ]]; then
+    STARTUP_CHAT_ID=$(python3 -c "
+import json, sys
+try:
+    with open('${ALLOWFROM_FILE}') as f:
+        d = json.load(f)
+    if isinstance(d, dict) and 'allowFrom' in d and d['allowFrom']:
+        print(d['allowFrom'][0])
+    elif isinstance(d, list) and d:
+        print(d[0])
+except Exception:
+    pass
+" 2>/dev/null || true)
+    if [[ -n "${STARTUP_CHAT_ID}" ]]; then
+        ACTIVE_MODEL="${SAVED_PRIMARY:-${TEMPLATE_PRIMARY}}"
+        curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\": ${STARTUP_CHAT_ID}, \"text\": \"✅ Bot restarted and ready.\\nBrain: \`${ACTIVE_MODEL}\`\"}" \
+            > /dev/null 2>&1 || true
+        log "Startup notification sent (chat ${STARTUP_CHAT_ID}, model ${ACTIVE_MODEL})."
+    fi
+fi
+
 # ── Start OpenClaw Gateway ─────────────────────────────────────────────────
 log "Starting OpenClaw Gateway..."
 exec openclaw gateway run
